@@ -58,6 +58,8 @@ const STR = {
     d_line: "Product line (optional)",
     d_profile: "Slicer profile (Bambu Studio)",
     d_profile_none: "No profile (not selectable in Studio)",
+    d_profile_own: "My presets",
+    d_profile_current: "Current profile",
     d_display: "Custom name (optional)",
     d_loading: "Loading catalog…",
     d_color: "Color",
@@ -121,6 +123,8 @@ const STR = {
     d_line: "Sorte (optional)",
     d_profile: "Slicer-Profil (Bambu Studio)",
     d_profile_none: "Kein Profil (in Studio nicht zuweisbar)",
+    d_profile_own: "Eigene Profile",
+    d_profile_current: "Aktuelles Profil",
     d_display: "Eigener Name (optional)",
     d_loading: "Katalog wird geladen…",
     d_color: "Farbe",
@@ -482,11 +486,15 @@ class BambuFilamentsCard extends HTMLElement {
     // (free text is rejected with HTTP 400), so the dialog uses dropdowns fed
     // by the get_catalog action - exactly like the Handy app.
     let catalog = [];
+    // The account's own slicer presets (filament_id "P…"): selectable as a
+    // spool's slicer profile only, never as an official vendor/product.
+    let presets = [];
     try {
       const resp = await this._hass.callService(
         "bambu_filaments", "get_catalog", {}, undefined, false, true
       );
       catalog = resp?.response?.filaments || [];
+      presets = resp?.response?.presets || [];
     } catch (e) {
       catalog = [];
     }
@@ -516,6 +524,21 @@ class BambuFilamentsCard extends HTMLElement {
       .sort((a, b) => `${a.f.vendor} ${a.f.name}`.localeCompare(`${b.f.vendor} ${b.f.name}`))
       .map(({ f, i }) => `<option value="${i}">${esc(f.vendor)} ${esc(f.name)}${f.name === f.material ? "" : ` (${esc(f.material)})`}</option>`)
       .join("");
+    // Own presets as "p:<index>". A profile id found in neither list (e.g. a
+    // preset of another account) stays selectable as "keep", so saving an
+    // edit never clears a profile the dialog cannot name.
+    const presetOpts = presets.length
+      ? `<optgroup label="${esc(t.d_profile_own)}">${presets
+          .map((p, i) => `<option value="p:${i}">${esc(p.name)}${p.vendor ? ` (${esc(p.vendor)})` : ""}</option>`)
+          .join("")}</optgroup>`
+      : "";
+    const currentId = isEdit ? spool.filament_id || "" : "";
+    const keepCurrent = !!currentId
+      && !catalog.some((f) => f.filament_id === currentId)
+      && !presets.some((p) => p.filament_id === currentId);
+    const keepOpt = keepCurrent
+      ? `<option value="keep">${esc(t.d_profile_current)} (${esc(currentId)})</option>`
+      : "";
 
     // The dialog lives on document.body: HA's dashboard containers use CSS
     // transforms, which turn position:fixed inside a card into card-relative
@@ -588,6 +611,8 @@ class BambuFilamentsCard extends HTMLElement {
             <label>${t.d_profile}
               <select id="f-cprofile">
                 <option value="">${t.d_profile_none}</option>
+                ${keepOpt}
+                ${presetOpts}
                 ${profileOpts}
               </select></label>
           </div>
@@ -633,7 +658,9 @@ class BambuFilamentsCard extends HTMLElement {
     if (editEntry) root.querySelector("#f-product").value = editEntry.filament_id;
     if (customInit && spool.filament_id) {
       const pidx = catalog.findIndex((f) => f.filament_id === spool.filament_id);
-      if (pidx >= 0) root.querySelector("#f-cprofile").value = String(pidx);
+      const oidx = presets.findIndex((p) => p.filament_id === spool.filament_id);
+      root.querySelector("#f-cprofile").value =
+        oidx >= 0 ? `p:${oidx}` : pidx >= 0 ? String(pidx) : keepCurrent ? "keep" : "";
     }
 
     const close = () => {
@@ -721,7 +748,10 @@ class BambuFilamentsCard extends HTMLElement {
         data.material = val("f-cmaterial");
         data.name = val("f-cname") || data.material;
         const pidx = val("f-cprofile");
-        data.filament_id = pidx === "" ? "" : (catalog[Number(pidx)]?.filament_id || "");
+        data.filament_id = pidx === "" ? ""
+          : pidx === "keep" ? currentId
+          : pidx.startsWith("p:") ? (presets[Number(pidx.slice(2))]?.filament_id || "")
+          : (catalog[Number(pidx)]?.filament_id || "");
         if (!data.vendor || !data.material) {
           err.hidden = false;
           err.textContent = t.d_error;

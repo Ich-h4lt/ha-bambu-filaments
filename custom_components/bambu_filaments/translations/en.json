@@ -281,7 +281,7 @@
     },
     "get_catalog": {
       "name": "Get filament catalog",
-      "description": "Returns the vendor/product combinations the Bambu cloud accepts when creating spools."
+      "description": "Returns the vendor/product combinations the Bambu cloud accepts when creating spools, plus the account's own slicer presets (usable as filament_id)."
     },
     "delete_spool": {
       "name": "Delete spool",

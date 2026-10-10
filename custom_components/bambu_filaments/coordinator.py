@@ -93,6 +93,8 @@ class BambuFilamentsCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]
         self.hub_device_id: str | None = None
         self._catalog_cache: list[dict[str, Any]] | None = None
         self._catalog_cached_at: float = 0.0
+        self._presets_cache: list[dict[str, Any]] | None = None
+        self._presets_cached_at: float = 0.0
         # Auto-register bookkeeping: uuids we created ourselves (until the
         # cloud lists them) and uuids the user deleted while the spool was
         # still mounted (never re-create those until the spool is removed).
@@ -636,6 +638,52 @@ class BambuFilamentsCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]
             ]
             self._catalog_cached_at = now
         return self._catalog_cache
+
+    async def async_get_user_presets(self) -> list[dict[str, Any]]:
+        """The account's own filament presets (Studio user presets), cached for an hour.
+
+        Only offered as slicer profiles in the card; never used for the
+        vendor/product validation of the official catalog. A failure is not
+        fatal: the card then simply shows no own presets.
+        """
+        now = self.hass.loop.time()
+        if self._presets_cache is not None and now - self._presets_cached_at <= 3600:
+            return self._presets_cache
+        try:
+            raw = await self.hass.async_add_executor_job(self.client.get_user_presets)
+        except AuthExpired:
+            raise
+        except BambuCloudError as err:
+            _LOGGER.debug("Own filament presets unavailable: %s", err)
+            return self._presets_cache or []
+        filament = raw.get("filament") if isinstance(raw, dict) else None
+        private = filament.get("private") if isinstance(filament, dict) else None
+        presets: dict[str, dict[str, Any]] = {}
+        for entry in private or []:
+            if not isinstance(entry, dict):
+                continue
+            filament_id = str(entry.get("filament_id") or "")
+            # One preset exists per printer/nozzle variant ("Name @BBL P2S"),
+            # all sharing the filament_id the spool links to - keep one.
+            if not filament_id or filament_id in presets:
+                continue
+            name = str(entry.get("name") or filament_id).split(" @")[0].strip()
+            presets[filament_id] = {
+                "vendor": _first(entry.get("filament_vendor")),
+                "material": _first(entry.get("filament_type")),
+                "name": name or filament_id,
+                "filament_id": filament_id,
+            }
+        self._presets_cache = sorted(presets.values(), key=lambda p: p["name"].lower())
+        self._presets_cached_at = now
+        return self._presets_cache
+
+
+def _first(value: Any) -> str:
+    """Studio preset fields may be a plain string or a one-element list."""
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    return str(value or "")
 
 
 def _sanitize_spool(spool: dict[str, Any]) -> dict[str, Any]:

@@ -281,7 +281,7 @@
     },
     "get_catalog": {
       "name": "Filament-Katalog abrufen",
-      "description": "Liefert die Hersteller/Produkt-Kombinationen, die die Bambu-Cloud beim Anlegen von Spulen akzeptiert."
+      "description": "Liefert die Hersteller/Produkt-Kombinationen, die die Bambu-Cloud beim Anlegen von Spulen akzeptiert, sowie die eigenen Slicer-Profile des Kontos (als filament_id nutzbar)."
     },
     "delete_spool": {
       "name": "Spule löschen",

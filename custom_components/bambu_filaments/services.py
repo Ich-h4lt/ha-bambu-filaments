@@ -325,12 +325,22 @@ def async_register_services(hass: HomeAssistant) -> None:
         await coordinator.async_request_refresh()
 
     async def handle_get_catalog(call: ServiceCall) -> dict[str, Any]:
-        """Canonical vendor/product combos the cloud accepts (cached 1 h)."""
+        """Canonical vendor/product combos the cloud accepts (cached 1 h).
+
+        `presets` lists the account's own slicer presets (filament_id only,
+        e.g. "P1a2b3c4"): valid as a spool's slicer profile, but not as an
+        official vendor/product combination.
+        """
         coordinator = _first_coordinator(hass)
         try:
-            return {"filaments": await coordinator.async_get_catalog()}
+            filaments = await coordinator.async_get_catalog()
         except BambuCloudError as err:
             raise HomeAssistantError(f"Fetching the filament catalog failed: {err}") from err
+        try:
+            presets = await coordinator.async_get_user_presets()
+        except BambuCloudError:
+            presets = []
+        return {"filaments": filaments, "presets": presets}
 
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, handle_refresh)
     hass.services.async_register(
