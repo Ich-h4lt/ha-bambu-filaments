@@ -313,6 +313,22 @@ class BambuFilamentsCard extends HTMLElement {
       this._configDirty = false;
       this._render(st);
     }
+    this._openLinkedSpool(st);
+  }
+
+  // Deep link: `?edit_spool=<spool_id>` in the dashboard URL opens that
+  // spool's edit dialog once (e.g. from a markdown link on another view).
+  // The parameter is removed first, so a reload or back navigation does not
+  // reopen the dialog.
+  _openLinkedSpool(st) {
+    if (!st || !location.search.includes("edit_spool=")) return;
+    const params = new URLSearchParams(location.search);
+    const id = Number(params.get("edit_spool"));
+    params.delete("edit_spool");
+    const query = params.toString();
+    history.replaceState(history.state, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+    const spool = (st.attributes.spools || []).find((s) => s.spool_id === id);
+    if (spool) this._openDialog(STR[lang(this._hass)], spool);
   }
 
   getCardSize() {
