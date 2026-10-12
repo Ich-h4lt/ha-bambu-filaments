@@ -207,6 +207,19 @@ class BambuCloudClient:
             raise BambuCloudError(f"Fetching filament catalog failed (HTTP {response.status_code})")
         return self._json(response)
 
+    def get_user_presets(self) -> dict[str, Any]:
+        """Fetch the account's slicer presets (Studio preset sync, requires auth).
+
+        Same endpoint ha-bambulab uses for its custom filament list; the
+        account's own filament presets are under `filament.private`.
+        """
+        response = self._request(
+            "get", f"{self._api}/v1/iot-service/api/slicer/setting?version=1.10.0.89"
+        )
+        if response.status_code != 200:
+            raise BambuCloudError(f"Fetching slicer presets failed (HTTP {response.status_code})")
+        return self._json(response)
+
     def update_spool(self, spool: dict[str, Any]) -> dict[str, Any]:
         """Update one spool. `spool` must contain at least id and filamentName."""
         response = self._request(

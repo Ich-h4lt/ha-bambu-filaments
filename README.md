@@ -82,7 +82,7 @@ Shown on the **Features** step during setup and behind *Configure*: polling inte
 | `bambu_filaments.update_spool` | `spool_id` + any of `vendor`, `material`, `name`, `color`, `total_g`, `remaining_g`, `note`, `filament_id`, `display_name` | Change fields; only given fields are written |
 | `bambu_filaments.create_spool` | `vendor`, `material`, `name`, `color`, `total_g`, `remaining_g`, `filament_id`, `display_name`, `note`, `count` | Add spool(s); `filament_id: ""` for third-party brands, `count` 1–50 |
 | `bambu_filaments.delete_spool` | `spool_id` | Delete from the cloud library |
-| `bambu_filaments.get_catalog` | – | Vendor/product combinations the cloud accepts (response data) |
+| `bambu_filaments.get_catalog` | – | Vendor/product combinations the cloud accepts, plus your own slicer presets as `presets` (response data) |
 
 `spool_id` is the cloud id, shown as attribute on every spool sensor. Write actions are **admin-only** — they change your Bambu account.
 
@@ -121,7 +121,7 @@ compact: true
 
 <img src="https://raw.githubusercontent.com/Timmes123/ha-bambu-filaments/main/images/card-loaded.png" width="400" alt="Card filtered to spools loaded in a printer">
 
-**Add and edit dialogs** — catalog dropdowns, color picker, count field for stock, custom/third-party brands with a linked slicer profile so Studio can assign them, and a cog per row to edit or delete:
+**Add and edit dialogs** — catalog dropdowns, color picker, count field for stock, custom/third-party brands with a linked slicer profile (official or one of your own Studio presets) so Studio can assign them, and a cog per row to edit or delete:
 
 <img src="https://raw.githubusercontent.com/Timmes123/ha-bambu-filaments/main/images/card-add-dialog.png" width="300" alt="In-card dialog for adding a new spool"> <img src="https://raw.githubusercontent.com/Timmes123/ha-bambu-filaments/main/images/card-add-custom.png" width="300" alt="Custom third-party brand mode of the add dialog"> <img src="https://raw.githubusercontent.com/Timmes123/ha-bambu-filaments/main/images/card-edit-dialog.png" width="300" alt="In-card dialog for editing an existing spool">
 
