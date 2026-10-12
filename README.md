@@ -157,6 +157,8 @@ Everything is configurable in the visual editor.
 | `warn_threshold` | `50` | Bar turns orange below this % |
 | `max_height` | – | Scroll after this many pixels |
 
+**Link to a spool's edit dialog:** open the dashboard view with `?edit_spool=<spool_id>` (e.g. `/dashboard-filament/storage?edit_spool=15040408`, the id is in the `spools` attribute) and the card opens that spool's edit dialog once. Handy for a markdown link next to a QR-code workflow.
+
 ## FAQ
 
 **Does this control my printer?** No — nothing is sent to your printers. AMS information comes from the Bambu Lab printer integration's sensors inside Home Assistant.
