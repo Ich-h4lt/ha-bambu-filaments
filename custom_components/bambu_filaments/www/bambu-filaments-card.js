@@ -103,6 +103,12 @@ const STR = {
     x_history: (d) => `Remaining weight, last ${d} days`,
     x_no_history: "No history: the spool's remaining-weight sensor was not found.",
     x_edit: "Edit",
+    x_weigh: "Remaining (g)",
+    x_save: "Save",
+    x_full: "Full",
+    x_full_confirm: (n, g) => `Mark "${n}" as full (${g})?`,
+    x_saved: "Saved",
+    x_error: "Saving failed.",
     x_close: "Close",
     e_show_add: "Show add-spool button",
     e_compact: "Compact rows",
@@ -177,6 +183,12 @@ const STR = {
     x_history: (d) => `Restgewicht der letzten ${d} Tage`,
     x_no_history: "Kein Verlauf: Der Restgewicht-Sensor dieser Spule wurde nicht gefunden.",
     x_edit: "Bearbeiten",
+    x_weigh: "Restgewicht (g)",
+    x_save: "Speichern",
+    x_full: "Voll",
+    x_full_confirm: (n, g) => `„${n}" als voll speichern (${g})?`,
+    x_saved: "Gespeichert",
+    x_error: "Speichern fehlgeschlagen.",
     x_close: "Schließen",
     e_show_add: "Neue-Spule-Button anzeigen",
     e_compact: "Kompakte Zeilen",
@@ -610,6 +622,18 @@ class BambuFilamentsCard extends HTMLElement {
         .dlg-close { background:var(--secondary-background-color, #2b313c);
           color:var(--primary-text-color, #e3e5ea); }
         .dlg-edit { background:#00ae42; color:#fff; font-weight:600; }
+        .xquick { display:flex; gap:8px; align-items:flex-end;
+                  border-top:1px solid var(--divider-color, rgba(255,255,255,.12)); padding-top:12px; }
+        .xquick label { display:flex; flex-direction:column; gap:3px; font-size:0.85em; flex:1;
+                        color:var(--secondary-text-color, #9aa1ad); min-width:0; }
+        .xquick input { box-sizing:border-box; width:100%; padding:7px 9px; font-size:1rem;
+          border:1px solid var(--divider-color, rgba(255,255,255,.12)); border-radius:8px;
+          background:var(--secondary-background-color, #2b313c); color:var(--primary-text-color, #e3e5ea); }
+        .xquick button { padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-size:0.95em;
+          background:var(--secondary-background-color, #2b313c); color:var(--primary-text-color, #e3e5ea);
+          font-weight:600; }
+        .xquick button:disabled { opacity:.6; }
+        .xerr { color:var(--error-color, #e74c3c); font-size:0.85em; }
       </style>
       <div class="overlay">
         <div class="dlg">
@@ -625,6 +649,13 @@ class BambuFilamentsCard extends HTMLElement {
             <div class="barbg"><div class="bar"></div></div>
           </div>
           <dl class="xinfo"></dl>
+          ${c.show_edit ? `
+          <div class="xquick">
+            <label>${esc(t.x_weigh)}<input class="xweigh" type="number" min="0" max="20000" inputmode="numeric" value="${spool.remaining_g ?? ""}"/></label>
+            <button class="xsave">${esc(t.x_save)}</button>
+            <button class="xfull">${esc(t.x_full)}</button>
+          </div>
+          <div class="xerr" hidden></div>` : ""}
           <div class="xhist-title">${esc(t.x_history(days))}</div>
           <div class="xhist"></div>
           <div class="xhint" hidden>${esc(t.x_no_history)}</div>
@@ -653,8 +684,53 @@ class BambuFilamentsCard extends HTMLElement {
       close();
       this._openDialog(t, current);
     });
+    if (c.show_edit) this._bindQuickActions(root, t, spool.spool_id);
 
     this._showHistory(root, spool.spool_id, days);
+  }
+
+  // Quick remaining-weight updates (weighing a spool, refilling) without the
+  // full edit dialog. The dialog stays open; the sync updates its values.
+  _bindQuickActions(root, t, spoolId) {
+    const input = root.querySelector(".xweigh");
+    const err = root.querySelector(".xerr");
+    const current = () => (this._lastState?.attributes?.spools || [])
+      .find((s) => s.spool_id === spoolId);
+    const save = async (btn, grams) => {
+      const label = btn.textContent;
+      err.hidden = true;
+      btn.disabled = true;
+      btn.textContent = t.d_saving;
+      try {
+        await this._hass.callService("bambu_filaments", "set_remaining", {
+          spool_id: spoolId, remaining_g: grams,
+        });
+        input.value = grams;
+        btn.textContent = t.x_saved;
+        setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 1500);
+      } catch (e) {
+        btn.textContent = label;
+        btn.disabled = false;
+        err.hidden = false;
+        err.textContent = t.x_error;
+      }
+    };
+    root.querySelector(".xsave").addEventListener("click", (ev) => {
+      const g = Math.round(Number(input.value));
+      if (input.value === "" || !Number.isFinite(g) || g < 0 || g > 20000) {
+        err.hidden = false;
+        err.textContent = t.x_error;
+        return;
+      }
+      save(ev.currentTarget, g);
+    });
+    root.querySelector(".xfull").addEventListener("click", (ev) => {
+      const s = current();
+      if (!s || !s.total_g) return;
+      const name = (s.display_name || `${s.vendor || ""} ${s.name || s.material || ""}`).trim();
+      if (!confirm(t.x_full_confirm(name, fmtG(s.total_g)))) return;
+      save(ev.currentTarget, s.total_g);
+    });
   }
 
   async _showHistory(root, spoolId, days) {
