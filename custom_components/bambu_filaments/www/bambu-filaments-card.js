@@ -314,11 +314,22 @@ class BambuFilamentsCard extends HTMLElement {
     this._lastRenderKey = null;
   }
 
+  // HA attaches a card, detaches and re-attaches it while building a view
+  // (and when moving it between containers). Only a card that stays detached
+  // closes its dialog - otherwise a dialog opened by a deep link on page load
+  // would vanish right away.
   disconnectedCallback() {
     super.disconnectedCallback?.();
-    this._dialogHost?.remove();
-    this._dialogHost = null;
-    this._details = null;
+    setTimeout(() => {
+      if (this.isConnected) return;
+      this._dialogHost?.remove();
+      this._dialogHost = null;
+      this._details = null;
+    }, 0);
+  }
+
+  connectedCallback() {
+    if (this._lastState) this._openLinkedSpool(this._lastState);
   }
 
   set hass(hass) {
@@ -349,7 +360,8 @@ class BambuFilamentsCard extends HTMLElement {
   // from a markdown link, a push notification or a QR code). The parameter
   // is removed first, so a reload or back navigation does not reopen it.
   _openLinkedSpool(st) {
-    if (!st || !/[?&](edit_spool|spool)=/.test(location.search)) return;
+    // Not before the card is in the page (see disconnectedCallback).
+    if (!st || !this.isConnected || !/[?&](edit_spool|spool)=/.test(location.search)) return;
     const params = new URLSearchParams(location.search);
     const editId = params.get("edit_spool");
     const id = Number(editId ?? params.get("spool"));
@@ -601,7 +613,8 @@ class BambuFilamentsCard extends HTMLElement {
         dt { color:var(--secondary-text-color, #9aa1ad); }
         dd { margin:0; overflow-wrap:anywhere; }
         .xhist-title { font-size:0.85em; color:var(--secondary-text-color, #9aa1ad); }
-        .xhist { min-height:40px; }
+        .xhist { min-height:40px; --ha-card-border-width:0; --ha-card-box-shadow:none;
+                 --ha-card-background:transparent; margin:0 -16px; }
         .xhint { font-size:0.85em; color:var(--secondary-text-color, #9aa1ad); }
         [hidden] { display:none !important; }
         .dbtns { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
@@ -634,7 +647,11 @@ class BambuFilamentsCard extends HTMLElement {
           </div>
         </div>
       </div>`;
-    document.body.appendChild(host);
+    // Inside <home-assistant> instead of on document.body: HA's chart
+    // components read theme data from context providers there and fail
+    // outside of that tree. Still outside the dashboard's transformed
+    // containers, so position:fixed stays viewport-relative.
+    (document.querySelector("home-assistant")?.shadowRoot || document.body).appendChild(host);
     this._dialogHost = host;
     this._details = { root, spoolId: spool.spool_id, chart: null, t };
     this._fillDetails(spool);
@@ -674,6 +691,7 @@ class BambuFilamentsCard extends HTMLElement {
         stat_types: ["mean"],
         chart_type: "line",
         hide_legend: true,
+        min_y_axis: 0,
       });
       chart.hass = this._hass;
       this._details.chart = chart;
