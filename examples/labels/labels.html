@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Filament labels</title>
+<!--
+  A4 label sheet with one QR code per spool of the Bambu Filaments library.
+  Copy this file and qrcode.min.js to /config/www/bambu-filaments/ and open
+  /local/bambu-filaments/labels.html, either in a dashboard iframe or directly in a browser
+  that is signed in to Home Assistant.
+  QR content: Home Assistant tag https://www.home-assistant.io/tag/<spool_id>; scanning it with
+  the Companion app fires a tag_scanned event (see ../automation_spool_label_scanned.yaml).
+  English or German, following the Home Assistant / browser language.
+-->
+<style>
+  :root {
+    --bg: #f4f5f3; --surface: #fff; --fg: #1d2420; --muted: #5d6a63; --line: #d6dcd8; --accent: #0f7a48;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #131715; --surface: #1b211e; --fg: #e3eae5; --muted: #98a69e; --line: #2d3632; --accent: #45c486; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, -apple-system, sans-serif; }
+  .controls { padding: 12px 16px; display: grid; gap: 10px; max-width: 900px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .controls h1 { font-size: 1.15rem; margin: 0; }
+  .hint { color: var(--muted); font-size: .85rem; margin: 0; }
+  button, select, input[type=search] {
+    font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 10px;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 12px; }
+  .list label { display: flex; gap: 6px; align-items: center; font-size: .85rem; cursor: pointer; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); flex: none; }
+  #error { color: #b4442f; }
+  /* Label sheet: 4 columns on A4, cells with cut lines, 15 mm QR code */
+  .sheet { --qr: 15mm; background: #fff; color: #000; width: 210mm; padding: 8mm; margin: 8px 16px 24px;
+           display: grid; grid-template-columns: repeat(4, 48.5mm); grid-auto-rows: calc(var(--qr) + 2.5mm); }
+  .label { border: .2mm dashed #bbb; display: flex; gap: 1.5mm; align-items: center; padding: 1mm 1.5mm; overflow: hidden; }
+  .label svg { width: var(--qr); height: var(--qr); flex: none; display: block; }
+  .text { min-width: 0; font-size: 6.5pt; line-height: 1.2; }
+  .text b { font-size: 7pt; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+            line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+  .text .color { display: flex; overflow: hidden; gap: 1mm; align-items: center; white-space: nowrap; margin-top: 1.2em; }
+  /* Browsers drop background colors when printing unless told otherwise */
+  .text .color i { width: 2.6mm; height: 2.6mm; border-radius: 50%; border: .2mm solid #0004; flex: none;
+                   -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .text .id { display: block; color: #444; }
+  @page { size: A4; margin: 8mm; }
+  @media print {
+    body { background: #fff; }
+    .controls { display: none; }
+    .sheet { margin: 0; padding: 0; width: 194mm; }
+    .label { break-inside: avoid; }
+  }
+</style>
+<script src="qrcode.min.js"></script>
+</head>
+<body>
+<div class="controls">
+  <h1 id="title"></h1>
+  <p class="hint" id="hint"></p>
+  <div class="row">
+    <input type="search" id="search">
+    <select id="filter">
+      <option value="all"></option>
+      <option value="storage"></option>
+      <option value="printer"></option>
+    </select>
+  </div>
+  <div class="row">
+    <button type="button" id="select-all"></button>
+    <button type="button" id="select-none"></button>
+    <button type="button" id="print" class="primary"></button>
+    <span class="hint" id="counter"></span>
+  </div>
+  <p id="error" hidden></p>
+  <div class="list" id="list"></div>
+</div>
+<div class="sheet" id="sheet"></div>
+<script>
+// Adjust if your spools sensor has a different entity id (German HA: sensor.bambu_filament_library_spulen).
+const SENSOR = "sensor.bambu_filament_library_spools";
+const TAG_URL = "https://www.home-assistant.io/tag/";
+
+const STRINGS = {
+  en: {
+    title: "Filament labels",
+    hint: "Select spools and print (A4, turn off the browser's headers and footers). Scanning a QR code opens the spool in Home Assistant.",
+    search: "Search (name, color, id)",
+    all: "All spools", storage: "Storage only", printer: "In printer only",
+    selectAll: "All visible", selectNone: "None", print: "Print",
+    counter: n => `${n} labels`,
+    notSignedIn: "Not signed in: open this page in the dashboard or in a browser that is signed in to Home Assistant.",
+    expired: "Sign-in expired: open Home Assistant in this browser again.",
+    apiError: status => `Home Assistant API answered with ${status}.`,
+  },
+  de: {
+    title: "Filament-Etiketten",
+    hint: "Spulen auswählen und drucken (A4, Kopf- und Fußzeilen des Browsers ausschalten). Der QR-Code öffnet beim Scannen die Spule in Home Assistant.",
+    search: "Suchen (Name, Farbe, ID)",
+    all: "Alle Spulen", storage: "Nur Lager", printer: "Nur im Drucker",
+    selectAll: "Alle sichtbaren", selectNone: "Keine", print: "Drucken",
+    counter: n => `${n} Etiketten`,
+    notSignedIn: "Nicht angemeldet: Seite im Dashboard oder in einem Browser öffnen, in dem Home Assistant angemeldet ist.",
+    expired: "Anmeldung abgelaufen: Home Assistant in diesem Browser neu öffnen.",
+    apiError: status => `Die Home-Assistant-API antwortet mit ${status}.`,
+  },
+};
+
+// The surrounding Home Assistant frontend when the page runs in a dashboard iframe.
+function parentHass() {
+  try {
+    return window.parent !== window && window.parent.document.querySelector("home-assistant")?.hass;
+  } catch (e) {
+    return null; // no access to the frontend
+  }
+}
+
+const lang = (parentHass()?.language || navigator.language || "en").toLowerCase().startsWith("de") ? "de" : "en";
+const t = STRINGS[lang];
+let spools = [];
+const selected = new Set();
+
+// Spools from the surrounding frontend, or via the API with this browser's sign-in.
+async function loadSpools() {
+  const hass = parentHass();
+  if (hass?.states?.[SENSOR]) return hass.states[SENSOR].attributes.spools || [];
+  const token = await accessToken();
+  const response = await fetch(`/api/states/${SENSOR}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error(t.apiError(response.status));
+  return (await response.json()).attributes.spools || [];
+}
+
+async function accessToken() {
+  let tokens = null;
+  try { tokens = JSON.parse(localStorage.getItem("hassTokens")); } catch (e) { /* empty */ }
+  if (!tokens?.access_token) throw new Error(t.notSignedIn);
+  if (Date.now() < tokens.expires - 60000) return tokens.access_token;
+  const body = new URLSearchParams({ grant_type: "refresh_token", client_id: tokens.clientId, refresh_token: tokens.refresh_token });
+  const response = await fetch("/auth/token", { method: "POST", body });
+  if (!response.ok) throw new Error(t.expired);
+  const fresh = await response.json();
+  tokens.access_token = fresh.access_token;
+  tokens.expires = Date.now() + fresh.expires_in * 1000;
+  try { localStorage.setItem("hassTokens", JSON.stringify(tokens)); } catch (e) { /* not important */ }
+  return tokens.access_token;
+}
+
+const color = s => (s.color || "#FFFFFF").slice(0, 7);
+// A custom name from Handy/Studio (exact color name) wins; automatic names
+// like "10/10/2026 14:08 added" are ignored.
+const customName = s => (s.display_name && !/hinzugefügt$|added$/i.test(s.display_name)) ? s.display_name : "";
+const colorName = s => customName(s) || s.color_name || color(s).toUpperCase();
+const title = s => `${s.vendor || ""} ${s.name || ""}`.trim();
+const place = s => s.in_printer ? `AMS ${"ABCD"[s.ams_id || 0]}${Number(s.slot_id) + 1}` : "";
+
+function visible() {
+  const query = document.getElementById("search").value.trim().toLowerCase();
+  const filter = document.getElementById("filter").value;
+  return spools.filter(s =>
+    (filter === "all" || (filter === "storage") !== !!s.in_printer) &&
+    (!query || `${title(s)} ${colorName(s)} ${s.spool_id}`.toLowerCase().includes(query)));
+}
+
+function renderList() {
+  const list = document.getElementById("list");
+  list.replaceChildren(...visible().map(s => {
+    const label = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = selected.has(s.spool_id);
+    box.onchange = () => { box.checked ? selected.add(s.spool_id) : selected.delete(s.spool_id); renderSheet(); };
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = color(s);
+    label.append(box, dot, `${title(s)} · ${colorName(s)} · ${s.remaining_g} g${place(s) ? " · " + place(s) : ""}`);
+    return label;
+  }));
+}
+
+function qrSvg(text) {
+  const qr = qrcode(0, "L");
+  qr.addData(text);
+  qr.make();
+  return qr.createSvgTag({ cellSize: 1, margin: 2, scalable: true });
+}
+
+function renderSheet() {
+  const sheet = document.getElementById("sheet");
+  const chosen = spools.filter(s => selected.has(s.spool_id));
+  sheet.replaceChildren(...chosen.map(s => {
+    const cell = document.createElement("div");
+    cell.className = "label";
+    cell.innerHTML = qrSvg(TAG_URL + s.spool_id);
+    const text = document.createElement("div");
+    text.className = "text";
+    const b = document.createElement("b");
+    b.textContent = title(s);
+    const c = document.createElement("span");
+    c.className = "color";
+    const dot = document.createElement("i");
+    dot.style.background = color(s);
+    c.append(dot, colorName(s));
+    const id = document.createElement("span");
+    id.className = "id";
+    id.textContent = `ID ${s.spool_id} · ${s.total_g} g`;
+    text.append(b, c, id);
+    cell.append(text);
+    return cell;
+  }));
+  document.getElementById("counter").textContent = t.counter(chosen.length);
+}
+
+function renderAll() { renderList(); renderSheet(); }
+
+document.documentElement.lang = lang;
+document.title = t.title;
+document.getElementById("title").textContent = t.title;
+document.getElementById("hint").textContent = t.hint;
+document.getElementById("search").placeholder = t.search;
+for (const option of document.getElementById("filter").options) option.textContent = t[option.value];
+document.getElementById("select-all").textContent = t.selectAll;
+document.getElementById("select-none").textContent = t.selectNone;
+document.getElementById("print").textContent = t.print;
+
+document.getElementById("search").oninput = renderList;
+document.getElementById("filter").onchange = renderList;
+document.getElementById("select-all").onclick = () => { visible().forEach(s => selected.add(s.spool_id)); renderAll(); };
+document.getElementById("select-none").onclick = () => { selected.clear(); renderAll(); };
+document.getElementById("print").onclick = () => window.print();
+
+loadSpools().then(data => {
+  spools = data.slice().sort((a, b) =>
+    title(a).localeCompare(title(b), lang) || colorName(a).localeCompare(colorName(b), lang) || a.spool_id - b.spool_id);
+  renderAll();
+}).catch(e => {
+  const el = document.getElementById("error");
+  el.textContent = e.message;
+  el.hidden = false;
+});
+</script>
+</body>
+</html>

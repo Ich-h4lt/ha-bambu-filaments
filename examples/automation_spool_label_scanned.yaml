@@ -1,0 +1,43 @@
+# Spool label scanned: the QR code on a label (see labels/labels.html) is the Home Assistant
+# tag https://www.home-assistant.io/tag/<spool_id>. Scanning it with the Companion app fires
+# tag_scanned; this automation sends a push notification to the phone that scanned it.
+# Tapping the notification opens the spool's details dialog in the storage view (?spool=<id>):
+# remaining-weight history, enter the weighed grams, mark as full, or edit the spool.
+#
+# Adjust:
+# - sensor.bambu_filament_library_spools (German HA: sensor.bambu_filament_library_spulen)
+# - /dashboard-filament/storage: path of the view with the bambu-filaments-card
+alias: "Filament: spool label scanned"
+description: >-
+  Push notification for a scanned spool label that opens the spool in the dashboard.
+triggers:
+  - trigger: event
+    event_type: tag_scanned
+conditions:
+  # Only tags that are spool ids of the library; other tags in the house are ignored.
+  - condition: template
+    value_template: >-
+      {{ trigger.event.data.tag_id | regex_match('^[0-9]{5,12}$') and
+         state_attr('sensor.bambu_filament_library_spools', 'spools') | default([], true)
+         | selectattr('spool_id', 'eq', trigger.event.data.tag_id | int) | list | count > 0 }}
+actions:
+  - variables:
+      spool: >-
+        {{ state_attr('sensor.bambu_filament_library_spools', 'spools')
+           | selectattr('spool_id', 'eq', trigger.event.data.tag_id | int) | first }}
+      # Companion app notify service from the device name, e.g. "Jane's iPhone" -> mobile_app_jane_s_iphone.
+      # If you renamed the service, set it here instead.
+      phone: >-
+        {{ device_attr(trigger.event.data.device_id, 'name') if trigger.event.data.device_id is defined else none }}
+  - if: "{{ phone is not none }}"
+    then:
+      - action: notify.mobile_app_{{ phone | slugify }}
+        continue_on_error: true
+        data:
+          title: Filament
+          message: >-
+            {{ spool.vendor }} {{ spool.name }} {{ spool.color_name or spool.color[:7] }}:
+            {{ spool.remaining_g }} of {{ spool.total_g }} g. Tap to open.
+          data:
+            url: /dashboard-filament/storage?spool={{ spool.spool_id }}
+mode: queued
