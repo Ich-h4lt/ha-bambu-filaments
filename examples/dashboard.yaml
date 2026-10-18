@@ -1,0 +1,133 @@
+# Example dashboard "Filament" with three views: printer, storage and labels.
+# The printer view needs the Bambu Lab integration (ha-bambulab,
+# https://github.com/greghesp/ha-bambulab); storage and labels only need Bambu Filaments.
+# Create a new dashboard (Settings > Dashboards, URL "dashboard-filament"), open it,
+# ⋮ > Edit dashboard > ⋮ > Raw configuration editor, and paste this file.
+#
+# Replace:
+# - <printer>: entity prefix of your printer from the Bambu Lab integration (ha-bambulab),
+#   e.g. sensor.p1s_01p00a123456789_print_status -> p1s_01p00a123456789
+# - 'P1S' in the AMS markdown: your printer's name in Bambu Handy / Studio
+#   (the spools' device_name attribute)
+# - <ams_device_id>: device id of your AMS (only for the optional ha-bambulab AMS card)
+# German Home Assistant installs use German entity ids, e.g.
+# sensor.bambu_filament_library_spulen and sensor.<printer>_ams_1_slot_1.
+title: Filament
+views:
+  - title: Printer
+    path: printer
+    icon: mdi:printer-3d
+    cards:
+      - type: markdown
+        content: "### {{ states('sensor.<printer>_task_name') }}"
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: tile
+            entity: sensor.<printer>_print_status
+            name: Status
+          - type: tile
+            entity: sensor.<printer>_current_stage
+            name: Stage
+          - type: tile
+            entity: sensor.<printer>_print_progress
+            name: Progress
+          - type: tile
+            entity: sensor.<printer>_remaining_time
+            name: Remaining
+          - type: tile
+            entity: sensor.<printer>_end_time
+            name: End
+          - type: tile
+            entity: sensor.<printer>_current_layer
+            name: Layer
+          - type: tile
+            entity: sensor.<printer>_nozzle_temperature
+            name: Nozzle
+          - type: tile
+            entity: sensor.<printer>_bed_temperature
+            name: Bed
+          - type: tile
+            entity: binary_sensor.<printer>_hms_errors
+            name: Errors (HMS)
+          - type: tile
+            entity: light.<printer>_chamber_light
+            name: Light
+            tap_action:
+              action: toggle
+      # Optional: AMS card from ha-bambulab-cards (HACS frontend repository).
+      - type: custom:ha-bambulab-ams-card
+        ams: <ams_device_id>
+        style: vector
+      # AMS slots with the library spool bound to each slot: remaining grams
+      # (orange below 100 g, red below 50 g) and a link to the spool's details dialog.
+      # A loaded slot without a bound spool gets a warning: its usage is not booked.
+      - type: markdown
+        content: |
+          {%- set printer = 'P1S' -%}
+          {%- set trays = 'sensor.<printer>_ams_1_tray_' -%}
+          {%- set spools = state_attr('sensor.bambu_filament_library_spools', 'spools') or [] -%}
+          {%- for n in range(1, 5) -%}
+          {%- set tray = trays ~ n -%}
+          {%- set color = (state_attr(tray, 'color') or '#888888')[:7] -%}
+          {%- set match = spools | selectattr('in_printer') | selectattr('device_name', 'eq', printer)
+               | selectattr('ams_id', 'eq', 0) | selectattr('slot_id', 'eq', (n - 1) | string) | list -%}
+          {%- if state_attr(tray, 'empty') -%}
+          **A{{ n }}** · empty
+          {%- elif match -%}
+          {%- set s = match[0] -%}
+          {%- set name = s.display_name if s.display_name and not (s.display_name is search('hinzugefügt$|added$', ignorecase=true))
+               else (s.color_name or color | upper) -%}
+          {%- set grams = '**' ~ s.remaining_g ~ ' g**' -%}
+          {%- set rest = s.remaining_g | float(0) -%}
+          {%- if rest < 50 %}{% set grams = '<font color="#DB4437">' ~ grams ~ '</font>' %}
+          {%- elif rest < 100 %}{% set grams = '<font color="#E0A800">' ~ grams ~ '</font>' %}{% endif -%}
+          <font color="{{ color }}">⬤</font> **A{{ n }}** · {{ s.vendor }} {{ s.name }} · {{ name }} · {{ grams }} · [⚙️](/dashboard-filament/storage?spool={{ s.spool_id }})
+          {%- else -%}
+          {%- set same = spools | selectattr('filament_id', 'eq', state_attr(tray, 'filament_id')) | list -%}
+          <font color="{{ color }}">⬤</font> **A{{ n }}** · {{ (same[0].vendor ~ ' ' ~ same[0].name) if same else state_attr(tray, 'type') }} · {{ color | upper }}<br>⚠️ no spool bound to this slot, usage is not booked
+          {%- endif %}
+
+          {% endfor %}
+
+  - title: Storage
+    path: storage
+    icon: mdi:warehouse
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: button
+            name: Reload from cloud
+            icon: mdi:cloud-sync
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: homeassistant.reload_config_entry
+              target:
+                entity_id: sensor.bambu_filament_library_spools
+          # ?spool=<id> on this view opens that spool's details dialog
+          # (used by the label automation and the ⚙️ links on the printer view).
+          - type: custom:bambu-filaments-card
+            combine: true
+      - type: statistics-graph
+        title: Total remaining (30 days)
+        entities:
+          - entity: sensor.bambu_filament_library_total_remaining_filament
+            name: Remaining
+        days_to_show: 30
+        period: day
+        stat_types:
+          - mean
+        chart_type: line
+        hide_legend: true
+
+  # Label sheet from labels/labels.html, copied to /config/www/bambu-filaments/.
+  - title: Labels
+    path: labels
+    icon: mdi:qrcode
+    type: panel
+    cards:
+      - type: iframe
+        url: /local/bambu-filaments/labels.html
+        aspect_ratio: 141%

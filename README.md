@@ -163,6 +163,8 @@ Everything is configurable in the visual editor.
 
 The history chart needs the per-spool remaining-weight sensors (enabled by default); without them the details dialog shows a hint instead.
 
+**QR labels per spool:** print one label per spool, scan it with your phone and edit that spool right away (weighed grams, full, edit dialog). [`examples/`](https://github.com/Timmes123/ha-bambu-filaments/tree/main/examples) has the label sheet, the scan automation and a complete dashboard with printer, storage and label views.
+
 ## FAQ
 
 **Does this control my printer?** No — nothing is sent to your printers. AMS information comes from the Bambu Lab printer integration's sensors inside Home Assistant.
