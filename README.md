@@ -151,13 +151,17 @@ Everything is configurable in the visual editor.
 | `show_note` | `false` | Spool note |
 | `show_type` | `false` | `RFID` / `manual` badge; stacks show the mix |
 | `show_edit` | `true` | Cog icon per row (edit, delete) |
+| `show_details` | `true` | Tapping a spool row opens a details dialog with a remaining-weight history chart (stacks still expand; expanded spools open it). With `show_edit` it also offers quick actions: enter the weighed remaining grams, or mark the spool as full |
+| `details_days` | `30` | Days shown in the history chart (daily means from HA's long-term statistics) |
 | `show_add` | `true` | "Add spool" button |
 | `compact` | `false` | Slimmer rows without the meta line |
 | `low_threshold` | `20` | Bar turns red below this % |
 | `warn_threshold` | `50` | Bar turns orange below this % |
 | `max_height` | – | Scroll after this many pixels |
 
-**Link to a spool's edit dialog:** open the dashboard view with `?edit_spool=<spool_id>` (e.g. `/dashboard-filament/storage?edit_spool=15040408`, the id is in the `spools` attribute) and the card opens that spool's edit dialog once. Handy for a markdown link next to a QR-code workflow.
+**Link to a spool's details or edit dialog:** open the dashboard view with `?spool=<spool_id>` for the details dialog or `?edit_spool=<spool_id>` for the edit dialog (e.g. `/dashboard-filament/storage?spool=15040408`, the id is in the `spools` attribute) and the card opens it once. Handy for markdown links, push notifications or QR codes on spool labels.
+
+The history chart needs the per-spool remaining-weight sensors (enabled by default); without them the details dialog shows a hint instead.
 
 ## FAQ
 

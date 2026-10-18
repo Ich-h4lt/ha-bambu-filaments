@@ -94,6 +94,22 @@ const STR = {
     type_manual: "manual",
     loc_ext: "External",
     e_show_edit: "Show edit button",
+    e_show_details: "Tap a spool for details and history",
+    x_storage: "In storage",
+    x_location: "Location",
+    x_profile: "Slicer profile",
+    x_type: "Type",
+    x_note: "Note",
+    x_history: (d) => `Remaining weight, last ${d} days`,
+    x_no_history: "No history: the spool's remaining-weight sensor was not found.",
+    x_edit: "Edit",
+    x_weigh: "Remaining (g)",
+    x_save: "Save",
+    x_full: "Full",
+    x_full_confirm: (n, g) => `Mark "${n}" as full (${g})?`,
+    x_saved: "Saved",
+    x_error: "Saving failed.",
+    x_close: "Close",
     e_show_add: "Show add-spool button",
     e_compact: "Compact rows",
     e_low: "Red below (%)",
@@ -158,6 +174,22 @@ const STR = {
     type_manual: "manuell",
     loc_ext: "Extern",
     e_show_edit: "Bearbeiten-Button anzeigen",
+    e_show_details: "Antippen öffnet Details und Verlauf",
+    x_storage: "Im Lager",
+    x_location: "Ort",
+    x_profile: "Slicer-Profil",
+    x_type: "Typ",
+    x_note: "Notiz",
+    x_history: (d) => `Restgewicht der letzten ${d} Tage`,
+    x_no_history: "Kein Verlauf: Der Restgewicht-Sensor dieser Spule wurde nicht gefunden.",
+    x_edit: "Bearbeiten",
+    x_weigh: "Restgewicht (g)",
+    x_save: "Speichern",
+    x_full: "Voll",
+    x_full_confirm: (n, g) => `„${n}" als voll speichern (${g})?`,
+    x_saved: "Gespeichert",
+    x_error: "Speichern fehlgeschlagen.",
+    x_close: "Schließen",
     e_show_add: "Neue-Spule-Button anzeigen",
     e_compact: "Kompakte Zeilen",
     e_low: "Rot unter (%)",
@@ -178,6 +210,8 @@ const DEFAULTS = {
   show_note: false,
   show_type: false,
   show_edit: true,
+  show_details: true,
+  details_days: 30,
   compact: false,
   low_threshold: 20,
   warn_threshold: 50,
@@ -292,10 +326,22 @@ class BambuFilamentsCard extends HTMLElement {
     this._lastRenderKey = null;
   }
 
+  // HA attaches a card, detaches and re-attaches it while building a view
+  // (and when moving it between containers). Only a card that stays detached
+  // closes its dialog - otherwise a dialog opened by a deep link on page load
+  // would vanish right away.
   disconnectedCallback() {
     super.disconnectedCallback?.();
-    this._dialogHost?.remove();
-    this._dialogHost = null;
+    setTimeout(() => {
+      if (this.isConnected) return;
+      this._dialogHost?.remove();
+      this._dialogHost = null;
+      this._details = null;
+    }, 0);
+  }
+
+  connectedCallback() {
+    if (this._lastState) this._openLinkedSpool(this._lastState);
   }
 
   set hass(hass) {
@@ -317,22 +363,29 @@ class BambuFilamentsCard extends HTMLElement {
       this._configDirty = false;
       this._render(st);
     }
+    this._refreshDetails(st);
     this._openLinkedSpool(st);
   }
 
-  // Deep link: `?edit_spool=<spool_id>` in the dashboard URL opens that
-  // spool's edit dialog once (e.g. from a markdown link on another view).
-  // The parameter is removed first, so a reload or back navigation does not
-  // reopen the dialog.
+  // Deep links: `?edit_spool=<spool_id>` in the dashboard URL opens that
+  // spool's edit dialog once, `?spool=<spool_id>` its details dialog (e.g.
+  // from a markdown link, a push notification or a QR code). The parameter
+  // is removed first, so a reload or back navigation does not reopen it.
   _openLinkedSpool(st) {
-    if (!st || !location.search.includes("edit_spool=")) return;
+    // Not before the card is in the page (see disconnectedCallback).
+    if (!st || !this.isConnected || !/[?&](edit_spool|spool)=/.test(location.search)) return;
     const params = new URLSearchParams(location.search);
-    const id = Number(params.get("edit_spool"));
+    const editId = params.get("edit_spool");
+    const id = Number(editId ?? params.get("spool"));
     params.delete("edit_spool");
+    params.delete("spool");
     const query = params.toString();
     history.replaceState(history.state, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
     const spool = (st.attributes.spools || []).find((s) => s.spool_id === id);
-    if (spool) this._openDialog(STR[lang(this._hass)], spool);
+    if (!spool) return;
+    const t = STR[lang(this._hass)];
+    if (editId !== null) this._openDialog(t, spool);
+    else this._openDetails(t, spool);
   }
 
   getCardSize() {
@@ -462,7 +515,7 @@ class BambuFilamentsCard extends HTMLElement {
       })
     );
     // A combined ×n row expands/collapses its individual spools on click
-    // (single rows are inert - editing goes through the cog icon).
+    // (single rows open the details dialog, editing goes through the cog icon).
     this.shadowRoot.querySelectorAll(".row[data-key]").forEach((el) =>
       el.addEventListener("click", () => {
         const k = el.dataset.key;
@@ -491,6 +544,284 @@ class BambuFilamentsCard extends HTMLElement {
         if (spool) this._openDialog(t, spool);
       })
     );
+    if (c.show_details) {
+      this.shadowRoot.querySelectorAll(".row.tap").forEach((el) =>
+        el.addEventListener("click", () => {
+          const spool = findSpool(Number(el.dataset.spool));
+          if (spool) this._openDetails(t, spool);
+        })
+      );
+    }
+  }
+
+  // The per-spool remaining-weight sensor, found via its device (identifier
+  // "<entry_id>-spool-<id>") - entity ids are user-renamable, so they cannot
+  // be derived from the spool. Null when per-spool entities are disabled.
+  // hass.devices normally carries the identifiers; if not, the device
+  // registry is fetched once as a fallback.
+  async _weightEntity(spoolId) {
+    const hass = this._hass;
+    const suffix = `-spool-${spoolId}`;
+    let devices = hass.devices || {};
+    const sample = Object.values(devices)[0];
+    if (sample && !Array.isArray(sample.identifiers)) {
+      if (!this._deviceIds) {
+        try {
+          const list = await hass.callWS({ type: "config/device_registry/list" });
+          this._deviceIds = Object.fromEntries(list.map((d) => [d.id, d]));
+        } catch (e) {
+          this._deviceIds = {};
+        }
+      }
+      devices = this._deviceIds;
+    }
+    for (const e of Object.values(hass.entities || {})) {
+      if (e.platform !== "bambu_filaments" || !e.device_id) continue;
+      const isWeight = e.translation_key === "spool_remaining_g"
+        || hass.states[e.entity_id]?.attributes?.device_class === "weight";
+      if (!isWeight) continue;
+      const ids = devices[e.device_id]?.identifiers || [];
+      if (ids.some(([d, v]) => d === "bambu_filaments" && String(v).endsWith(suffix))) {
+        return e.entity_id;
+      }
+    }
+    return null;
+  }
+
+  // Read-only details of one spool with a remaining-weight history chart
+  // (HA's own statistics-graph card, so it uses the long-term statistics and
+  // reaches back further than the recorder's purge window). "Edit" hands
+  // over to the edit dialog.
+  _openDetails(t, spool) {
+    if (this._dialogHost) return;
+    const c = this._config;
+    const days = Math.max(1, Number(c.details_days) || 30);
+    const host = document.createElement("div");
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <style>
+        .overlay { position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.55);
+                   display:flex; align-items:center; justify-content:center;
+                   font-family: var(--primary-font-family, Roboto, "Segoe UI", sans-serif);
+                   color: var(--primary-text-color, #e3e5ea); }
+        .dlg { background:var(--card-background-color, #1c2027);
+               border:1px solid var(--divider-color, rgba(255,255,255,.12));
+               border-radius:14px; padding:18px; width:min(420px, calc(100vw - 48px));
+               max-height: calc(100vh - 48px); overflow-y:auto;
+               display:flex; flex-direction:column; gap:12px;
+               box-shadow:0 8px 32px rgba(0,0,0,.5); }
+        .xhead { display:flex; align-items:center; gap:12px; }
+        .swatch { width:42px; height:42px; border-radius:10px; flex:none;
+                  border:1px solid var(--divider-color, rgba(255,255,255,.12)); }
+        .xtitle { font-size:1.1em; font-weight:600; }
+        .xsub { color:var(--secondary-text-color, #9aa1ad); font-size:0.88em; }
+        .xgrams { display:flex; justify-content:space-between; align-items:baseline; }
+        .xgrams b { font-size:1.3em; }
+        .xpct { color:var(--secondary-text-color, #9aa1ad); }
+        .barbg { height:6px; border-radius:3px; background:var(--secondary-background-color, #2b313c);
+                 overflow:hidden; margin-top:4px; }
+        .bar { height:100%; border-radius:3px; }
+        dl { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0; font-size:0.9em; }
+        dt { color:var(--secondary-text-color, #9aa1ad); }
+        dd { margin:0; overflow-wrap:anywhere; }
+        .xhist-title { font-size:0.85em; color:var(--secondary-text-color, #9aa1ad); }
+        .xhist { min-height:40px; --ha-card-border-width:0; --ha-card-box-shadow:none;
+                 --ha-card-background:transparent; margin:0 -16px; }
+        .xhint { font-size:0.85em; color:var(--secondary-text-color, #9aa1ad); }
+        [hidden] { display:none !important; }
+        .dbtns { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
+        .dbtns button { padding:8px 14px; border-radius:8px; border:none; cursor:pointer;
+          font-size:0.95em; }
+        .dlg-close { background:var(--secondary-background-color, #2b313c);
+          color:var(--primary-text-color, #e3e5ea); }
+        .dlg-edit { background:#00ae42; color:#fff; font-weight:600; }
+        .xquick { display:flex; gap:8px; align-items:flex-end;
+                  border-top:1px solid var(--divider-color, rgba(255,255,255,.12)); padding-top:12px; }
+        .xquick label { display:flex; flex-direction:column; gap:3px; font-size:0.85em; flex:1;
+                        color:var(--secondary-text-color, #9aa1ad); min-width:0; }
+        .xquick input { box-sizing:border-box; width:100%; padding:7px 9px; font-size:1rem;
+          border:1px solid var(--divider-color, rgba(255,255,255,.12)); border-radius:8px;
+          background:var(--secondary-background-color, #2b313c); color:var(--primary-text-color, #e3e5ea); }
+        .xquick button { padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-size:0.95em;
+          background:var(--secondary-background-color, #2b313c); color:var(--primary-text-color, #e3e5ea);
+          font-weight:600; }
+        .xquick button:disabled { opacity:.6; }
+        .xerr { color:var(--error-color, #e74c3c); font-size:0.85em; }
+      </style>
+      <div class="overlay">
+        <div class="dlg">
+          <div class="xhead">
+            <span class="swatch" style="${swatchStyle(spool)}"></span>
+            <div>
+              <div class="xtitle"></div>
+              <div class="xsub"></div>
+            </div>
+          </div>
+          <div>
+            <div class="xgrams"><span><b class="xrem"></b> / <span class="xtot"></span></span><span class="xpct"></span></div>
+            <div class="barbg"><div class="bar"></div></div>
+          </div>
+          <dl class="xinfo"></dl>
+          ${c.show_edit ? `
+          <div class="xquick">
+            <label>${esc(t.x_weigh)}<input class="xweigh" type="number" min="0" max="20000" inputmode="numeric" value="${spool.remaining_g ?? ""}"/></label>
+            <button class="xsave">${esc(t.x_save)}</button>
+            <button class="xfull">${esc(t.x_full)}</button>
+          </div>
+          <div class="xerr" hidden></div>` : ""}
+          <div class="xhist-title">${esc(t.x_history(days))}</div>
+          <div class="xhist"></div>
+          <div class="xhint" hidden>${esc(t.x_no_history)}</div>
+          <div class="dbtns">
+            <button class="dlg-close">${esc(t.x_close)}</button>
+            ${c.show_edit ? `<button class="dlg-edit">${esc(t.x_edit)}</button>` : ""}
+          </div>
+        </div>
+      </div>`;
+    // Inside <home-assistant> instead of on document.body: HA's chart
+    // components read theme data from context providers there and fail
+    // outside of that tree. Still outside the dashboard's transformed
+    // containers, so position:fixed stays viewport-relative.
+    (document.querySelector("home-assistant")?.shadowRoot || document.body).appendChild(host);
+    this._dialogHost = host;
+    this._details = { root, spoolId: spool.spool_id, chart: null, t };
+    this._fillDetails(spool);
+
+    const close = () => {
+      host.remove();
+      this._dialogHost = null;
+      this._details = null;
+    };
+    // Like the edit dialog: no click-outside-to-close (text selection would
+    // release over the overlay and close it by accident).
+    root.querySelector(".dlg-close").addEventListener("click", close);
+    root.querySelector(".dlg-edit")?.addEventListener("click", () => {
+      const current = (this._lastState?.attributes?.spools || [])
+        .find((s) => s.spool_id === spool.spool_id) || spool;
+      close();
+      this._openDialog(t, current);
+    });
+    if (c.show_edit) this._bindQuickActions(root, t, spool.spool_id);
+
+    this._showHistory(root, spool.spool_id, days);
+  }
+
+  // Quick remaining-weight updates (weighing a spool, refilling) without the
+  // full edit dialog. The dialog stays open; the sync updates its values.
+  _bindQuickActions(root, t, spoolId) {
+    const input = root.querySelector(".xweigh");
+    const err = root.querySelector(".xerr");
+    const current = () => (this._lastState?.attributes?.spools || [])
+      .find((s) => s.spool_id === spoolId);
+    const save = async (btn, grams) => {
+      const label = btn.textContent;
+      err.hidden = true;
+      btn.disabled = true;
+      btn.textContent = t.d_saving;
+      try {
+        await this._hass.callService("bambu_filaments", "set_remaining", {
+          spool_id: spoolId, remaining_g: grams,
+        });
+        input.value = grams;
+        btn.textContent = t.x_saved;
+        setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 1500);
+      } catch (e) {
+        btn.textContent = label;
+        btn.disabled = false;
+        err.hidden = false;
+        err.textContent = t.x_error;
+      }
+    };
+    root.querySelector(".xsave").addEventListener("click", (ev) => {
+      const g = Math.round(Number(input.value));
+      if (input.value === "" || !Number.isFinite(g) || g < 0 || g > 20000) {
+        err.hidden = false;
+        err.textContent = t.x_error;
+        return;
+      }
+      save(ev.currentTarget, g);
+    });
+    root.querySelector(".xfull").addEventListener("click", (ev) => {
+      const s = current();
+      if (!s || !s.total_g) return;
+      const name = (s.display_name || `${s.vendor || ""} ${s.name || s.material || ""}`).trim();
+      if (!confirm(t.x_full_confirm(name, fmtG(s.total_g)))) return;
+      save(ev.currentTarget, s.total_g);
+    });
+  }
+
+  async _showHistory(root, spoolId, days) {
+    const entityId = await this._weightEntity(spoolId);
+    if (!entityId || !window.loadCardHelpers) {
+      root.querySelector(".xhist").hidden = true;
+      root.querySelector(".xhint").hidden = false;
+      return;
+    }
+    window.loadCardHelpers().then((helpers) => {
+      if (!this._details || this._details.root !== root) return;
+      const chart = helpers.createCardElement({
+        type: "statistics-graph",
+        entities: [entityId],
+        days_to_show: days,
+        period: "day",
+        stat_types: ["mean"],
+        chart_type: "line",
+        hide_legend: true,
+        min_y_axis: 0,
+      });
+      chart.hass = this._hass;
+      this._details.chart = chart;
+      root.querySelector(".xhist").appendChild(chart);
+    });
+  }
+
+  // Writes the spool's current values into the open details dialog.
+  _fillDetails(spool) {
+    const d = this._details;
+    if (!d) return;
+    const { root, t } = d;
+    const c = this._config;
+    const custom = (spool.display_name || "").trim();
+    const colorLabel = spool.color_name || normHex(spool.color).slice(0, 7);
+    root.querySelector(".xtitle").textContent = custom || `${spool.name || spool.material || "?"} ${colorLabel}`.trim();
+    root.querySelector(".xsub").textContent = [spool.vendor, spool.material, spool.name, custom ? colorLabel : ""]
+      .filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(" · ");
+    const pct = spool.total_g ? Math.max(0, Math.min(100, Math.round((spool.remaining_g ?? 0) / spool.total_g * 100))) : 0;
+    root.querySelector(".xrem").textContent = fmtG(spool.remaining_g);
+    root.querySelector(".xtot").textContent = fmtG(spool.total_g);
+    root.querySelector(".xpct").textContent = `${pct}%`;
+    const bar = root.querySelector(".bar");
+    bar.style.width = `${pct}%`;
+    bar.style.background = (spool.remaining_g ?? 0) <= 0 ? "var(--disabled-text-color, #9e9e9e)"
+      : pct < c.low_threshold ? "var(--error-color, #e74c3c)"
+      : pct < c.warn_threshold ? "#f39c12"
+      : "#00ae42";
+    const type = spool.create_type === "ams" ? t.type_ams : spool.create_type === "manual" ? t.type_manual : spool.create_type;
+    const rows = [
+      [t.x_location, spool.in_printer ? locationLabel(spool, t.loc_ext) : t.x_storage],
+      [t.x_profile, spool.filament_id],
+      [t.x_type, type],
+      [t.x_note, spool.note],
+      ["ID", String(spool.spool_id)],
+    ].filter(([, v]) => v);
+    root.querySelector(".xinfo").innerHTML = rows
+      .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  }
+
+  // Keeps an open details dialog current: new values after a sync or an
+  // edit, and fresh hass for the chart. A spool deleted meanwhile closes it.
+  _refreshDetails(st) {
+    const d = this._details;
+    if (!d || !st) return;
+    if (d.chart) d.chart.hass = this._hass;
+    const spool = (st.attributes.spools || []).find((s) => s.spool_id === d.spoolId);
+    if (!spool) {
+      this._dialogHost?.remove();
+      this._dialogHost = null;
+      this._details = null;
+      return;
+    }
+    this._fillDetails(spool);
   }
 
   async _openDialog(t, spool) {
@@ -910,7 +1241,7 @@ class BambuFilamentsCard extends HTMLElement {
       ? ` <span class="chip">×${s._count}</span><ha-icon class="schev" icon="mdi:chevron-${opts.expanded ? "up" : "down"}"></ha-icon>`
       : "";
     return `
-      <div class="row ${c.compact ? "compact" : ""} ${opts.child ? "child" : ""}"
+      <div class="row ${c.compact ? "compact" : ""} ${opts.child ? "child" : ""} ${c.show_details && !combined ? "tap" : ""}"
            ${combined ? `data-key="${esc(s._key)}"` : ""} data-spool="${combined ? "" : s.spool_id}">
         <span class="swatch" style="${swatchStyle(s)}"></span>
         <div class="mid">
@@ -947,7 +1278,7 @@ class BambuFilamentsCard extends HTMLElement {
       .gsum { margin-left:auto; color:var(--secondary-text-color); font-weight:400; font-size:0.9em; }
       .row { display:flex; align-items:center; gap:12px; padding:8px 0;
              border-bottom:1px solid var(--divider-color); }
-      .row[data-key] { cursor:pointer; }
+      .row[data-key], .row.tap { cursor:pointer; }
       .row:last-child { border-bottom:none; }
       .row.compact { padding:4px 0; gap:8px; }
       .row.child { padding-left:46px; }
@@ -1076,6 +1407,7 @@ class BambuFilamentsCardEditor extends HTMLElement {
         ${check("show_note", t.e_show_note)}
         ${check("show_type", t.e_show_type)}
         ${check("show_edit", t.e_show_edit)}
+        ${check("show_details", t.e_show_details)}
         ${check("show_add", t.e_show_add)}
         ${check("compact", t.e_compact)}
         <div class="cols">
