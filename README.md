@@ -3,7 +3,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/Timmes123/ha-bambu-filaments)](https://github.com/Timmes123/ha-bambu-filaments/releases/latest)
 [![Pre-release](https://img.shields.io/github/v/release/Timmes123/ha-bambu-filaments?include_prereleases&label=pre-release&color=orange)](https://github.com/Timmes123/ha-bambu-filaments/releases)
 [![Validate](https://github.com/Timmes123/ha-bambu-filaments/actions/workflows/validate.yml/badge.svg)](https://github.com/Timmes123/ha-bambu-filaments/actions/workflows/validate.yml)
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/default)
 [![Downloads](https://img.shields.io/github/downloads/Timmes123/ha-bambu-filaments/total?label=downloads)](https://github.com/Timmes123/ha-bambu-filaments/releases)
 [![License](https://img.shields.io/github/license/Timmes123/ha-bambu-filaments)](https://github.com/Timmes123/ha-bambu-filaments/blob/main/LICENSE)
 [![Community Forum](https://img.shields.io/badge/community-forum-41BDF5.svg?logo=homeassistant&logoColor=white)](https://community.home-assistant.io/t/bambu-filaments-your-bambu-lab-cloud-filament-library-spools-colors-remaining-weight-in-ha/1022849)
@@ -43,7 +43,7 @@ All of it is off by default and toggled on the **Features** step after login or 
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Timmes123&repository=ha-bambu-filaments&category=integration)
 
-1. Add the repository via the badge (or manually as a custom **Integration** repository), install **Bambu Filaments**, restart Home Assistant. Requires Home Assistant 2026.8 or newer.
+1. Bambu Filaments is in the HACS default store: open HACS, search for **Bambu Filaments** (or click the button above), download it and restart Home Assistant. Requires Home Assistant 2026.8 or newer.
 2. Set up the integration and sign in with your Bambu Lab account (email code or 2FA if asked):
 
    [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=bambu_filaments)
