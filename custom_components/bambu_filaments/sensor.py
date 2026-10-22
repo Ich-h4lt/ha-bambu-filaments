@@ -88,6 +88,10 @@ def spool_attributes(
         "ams_id": spool.get("amsId"),
         "ams_type": spool.get("amsType"),
         "slot_id": spool.get("slotId"),
+        # The cloud dropped this slot binding while the AMS slot stayed
+        # unchanged; the location above is the kept one (see slot_hold.py).
+        "cloud_binding_lost": bool(spool.get("bindingLost")),
+        "cloud_binding_lost_since": spool.get("bindingLostSince"),
     }
 
 

@@ -22,9 +22,12 @@ from .ams_register import (
     build_ams_sync_item,
     printer_busy,
     printer_progress,
+    printer_running,
+    scan_ams_slots,
     scan_mounted_rfid_trays,
     watched_entity_ids,
 )
+from .slot_hold import SlotHoldStore, apply_held, cloud_slot_bindings, reconcile
 from .usage import UsageDeductor, find_mounted_manual_spool, slot_from_mapping
 from .colors import BambuColorDB
 from .const import (
@@ -44,6 +47,8 @@ from .const import (
     RUNOUT_MAX_REMAIN_PCT,
     OPT_DEDUCT_USAGE,
     DEFAULT_DEDUCT_USAGE,
+    OPT_KEEP_LOST_BINDING,
+    DEFAULT_KEEP_LOST_BINDING,
     REMAINING_PUSH_COOLDOWN_S,
     OPT_COLOR_LANG,
     OPT_SCAN_INTERVAL,
@@ -113,6 +118,14 @@ class BambuFilamentsCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]
         # cancelled job be booked proportionally.
         self._last_progress: dict[str, tuple[int, datetime]] = {}
         self.usage = UsageDeductor(hass, entry.entry_id)
+        # Slot bindings of manual spools kept after the cloud dropped them.
+        self.slot_hold = SlotHoldStore(hass, entry.entry_id)
+        # AMS tray sensor entity -> slot key, refreshed on every AMS pass, and
+        # the slot events seen between two passes (a short removal followed
+        # by a re-insert would be invisible to the next scan).
+        self._slot_entities: dict[str, str] = {}
+        self._slot_emptied: set[str] = set()
+        self._slot_runouts: set[str] = set()
         self._unsub_listener = None
         self._listener_ids: set[str] = set()
         self._watched: dict[str, tuple[str, str]] = {}
@@ -169,9 +182,14 @@ class BambuFilamentsCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]
         want_remaining = self._opt(OPT_SYNC_REMAINING, DEFAULT_SYNC_REMAINING)
         empty_pct = int(self._opt(OPT_EMPTY_PCT, DEFAULT_EMPTY_PCT) or 0)
         runout = bool(self._opt(OPT_EMPTY_ON_RUNOUT, DEFAULT_EMPTY_ON_RUNOUT))
-        if not (want_register or want_remaining or empty_pct or runout):
+        want_hold = bool(self._opt(OPT_KEEP_LOST_BINDING, DEFAULT_KEEP_LOST_BINDING))
+        if not want_hold:
+            await self.slot_hold.async_clear()
+        if not (want_register or want_remaining or empty_pct or runout or want_hold):
             return data
         if not bambulab_available(self.hass):
+            # Kept bindings stay stored but are not applied: without the AMS
+            # slot sensors there is nothing to confirm them with.
             return data
         trays = scan_mounted_rfid_trays(self.hass)
         if want_register:
@@ -182,7 +200,84 @@ class BambuFilamentsCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]
             await self._async_sync_remaining(data, trays)
         self._last_remain = {t.tray_uuid: (t.remain, t) for t in trays}
         self._track_printing_from(trays)
+        # Slot-level view for spools without RFID.
+        slots = scan_ams_slots(self.hass)
+        self._slot_entities = {reading.entity_id: key for key, reading in slots.items()}
+        emptied, self._slot_emptied = self._slot_emptied, set()
+        runouts, self._slot_runouts = self._slot_runouts, set()
+        if runout and runouts:
+            await self._async_mark_manual_runout(data, runouts)
+        if want_hold:
+            await self._async_hold_bindings(data, slots, emptied)
         return data
+
+    async def _async_mark_manual_runout(
+        self, data: dict[int, dict[str, Any]], keys: set[str]
+    ) -> None:
+        """Runout rule for spools without RFID: the slot a running print drew
+        from reported empty (seen by the tray listener), so the manual spool
+        bound to it - by the cloud or kept after a lost binding - is set to 0 g.
+        The AMS cannot report a remaining percentage for these spools; a
+        removal while the print is paused counts as a filament change.
+        """
+        await self.slot_hold.async_load()
+        cloud = cloud_slot_bindings(data)
+        for key in keys:
+            spool = cloud.get(key)
+            held = self.slot_hold.held.get(key)
+            if spool is None and held is not None and held.lost_since:
+                spool = data.get(held.spool_id)
+            if spool is None or spool.get("RFID") or int(spool.get("netWeight") or 0) == 0:
+                continue
+            try:
+                await self.hass.async_add_executor_job(
+                    self.client.update_spool,
+                    {"id": spool["id"], "filamentName": spool.get("filamentName") or "", "netWeight": 0},
+                )
+            except (AuthExpired, BambuCloudError) as err:
+                _LOGGER.warning("Could not mark run-out spool %s as empty: %s", spool["id"], err)
+                continue
+            _LOGGER.info(
+                "Spool %s %s %s ran out in %s during a print - marked empty (was %s g)",
+                spool.get("filamentVendor"), spool.get("filamentName"),
+                spool.get("displayName") or spool.get("color"),
+                _slot_label(key, spool.get("deviceName") or (held.device_name if held else None)),
+                spool.get("netWeight"),
+            )
+            spool["netWeight"] = 0
+            spool["depleted"] = True
+
+    async def _async_hold_bindings(
+        self,
+        data: dict[int, dict[str, Any]],
+        slots: dict[str, Any],
+        emptied: set[str],
+    ) -> None:
+        """Keep slot bindings the cloud dropped while the AMS slot is unchanged."""
+        await self.slot_hold.async_load()
+        held, events = reconcile(
+            self.slot_hold.held, data, slots, emptied, dt_util.utcnow().isoformat()
+        )
+        for event, binding, detail in events:
+            spool = data.get(binding.spool_id) or {}
+            what = " ".join(
+                str(v) for v in (
+                    spool.get("filamentVendor"), spool.get("filamentName"),
+                    spool.get("displayName") or spool.get("color"),
+                ) if v
+            ) or f"spool {binding.spool_id}"
+            where = _slot_label(binding.key, binding.device_name)
+            if event == "lost":
+                _LOGGER.info(
+                    "Cloud dropped the slot binding of %s in %s - kept, the AMS slot "
+                    "still holds the same spool", what, where,
+                )
+            elif event == "restored":
+                _LOGGER.info("Cloud reports the slot binding of %s in %s again", what, where)
+            else:
+                _LOGGER.info("Kept slot binding of %s in %s released: %s", what, where, detail)
+        await self.slot_hold.async_set(held)
+        apply_held(data, held)
 
     def _track_printing_from(self, trays: list[MountedTray]) -> None:
         """Remember which mounted spools a running/paused print draws from."""
@@ -210,6 +305,7 @@ class BambuFilamentsCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]
             or int(self._opt(OPT_EMPTY_PCT, DEFAULT_EMPTY_PCT) or 0)
             or self._opt(OPT_EMPTY_ON_RUNOUT, DEFAULT_EMPTY_ON_RUNOUT)
             or self._opt(OPT_DEDUCT_USAGE, DEFAULT_DEDUCT_USAGE)
+            or self._opt(OPT_KEEP_LOST_BINDING, DEFAULT_KEEP_LOST_BINDING)
         ):
             wanted = watched_entity_ids(self.hass)
         if set(wanted) == self._listener_ids:
@@ -231,6 +327,14 @@ class BambuFilamentsCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]
         if new is None:
             return
         serial, kind = self._watched.get(event.data["entity_id"], ("", ""))
+        key = self._slot_entities.get(event.data["entity_id"]) if kind == "tray" else None
+        if key is not None and old is not None:
+            # Remember every emptied slot until the next AMS pass; a slot that
+            # empties while it fed a running print is a runout.
+            if new.attributes.get("empty") and not old.attributes.get("empty"):
+                self._slot_emptied.add(key)
+                if old.attributes.get("active") and printer_running(self.hass, serial):
+                    self._slot_runouts.add(key)
         if kind == "status" and old is not None and old.state != new.state:
             # A print just stopped: remember how far it got, so a cancelled
             # job can be booked proportionally (the cloud only knows the plan).
@@ -677,6 +781,17 @@ class BambuFilamentsCoordinator(DataUpdateCoordinator[dict[int, dict[str, Any]]]
         self._presets_cache = sorted(presets.values(), key=lambda p: p["name"].lower())
         self._presets_cached_at = now
         return self._presets_cache
+
+
+def _slot_label(key: str, printer_name: str | None) -> str:
+    """'P2S AMS 1 slot 1' from a slot key, without exposing the serial."""
+    try:
+        _dev, ams, slot = key.split("|")
+        ams_i = int(ams)
+        unit = f"AMS HT {ams_i - 127}" if ams_i >= 128 else f"AMS {ams_i + 1}"
+        return f"{printer_name or 'printer'} {unit} slot {int(slot) + 1}"
+    except ValueError:
+        return printer_name or "printer"
 
 
 def _first(value: Any) -> str:

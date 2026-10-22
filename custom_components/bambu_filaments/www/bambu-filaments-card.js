@@ -93,10 +93,13 @@ const STR = {
     type_ams: "RFID",
     type_manual: "manual",
     loc_ext: "External",
+    loc_lost: "lost in cloud",
     e_show_edit: "Show edit button",
     e_show_details: "Tap a spool for details and history",
     x_storage: "In storage",
     x_location: "Location",
+    x_binding: "Assignment",
+    x_binding_lost: "Lost in the cloud since {time}, kept locally. Assign the spool again in Bambu Handy or Studio to restore it.",
     x_profile: "Slicer profile",
     x_type: "Type",
     x_note: "Note",
@@ -173,10 +176,13 @@ const STR = {
     type_ams: "RFID",
     type_manual: "manuell",
     loc_ext: "Extern",
+    loc_lost: "in Cloud verloren",
     e_show_edit: "Bearbeiten-Button anzeigen",
     e_show_details: "Antippen öffnet Details und Verlauf",
     x_storage: "Im Lager",
     x_location: "Ort",
+    x_binding: "Zuordnung",
+    x_binding_lost: "Seit {time} in der Cloud verloren, lokal gehalten. In Bambu Handy oder Studio neu zuordnen, um sie wiederherzustellen.",
     x_profile: "Slicer-Profil",
     x_type: "Typ",
     x_note: "Notiz",
@@ -249,6 +255,16 @@ function normHex(v) {
 function fmtG(g) {
   if (g == null) return "?";
   return g >= 10000 ? `${(g / 1000).toFixed(1).replace(/\.0$/, "")} kg` : `${g} g`;
+}
+
+function fmtTime(iso, hass) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || Number.isNaN(d.getTime())) return "?";
+  try {
+    return d.toLocaleString(hass?.locale?.language || undefined, { dateStyle: "short", timeStyle: "short" });
+  } catch (e) {
+    return d.toLocaleString();
+  }
 }
 
 function esc(s) {
@@ -799,6 +815,8 @@ class BambuFilamentsCard extends HTMLElement {
     const type = spool.create_type === "ams" ? t.type_ams : spool.create_type === "manual" ? t.type_manual : spool.create_type;
     const rows = [
       [t.x_location, spool.in_printer ? locationLabel(spool, t.loc_ext) : t.x_storage],
+      [t.x_binding, spool.in_printer && spool.cloud_binding_lost
+        ? t.x_binding_lost.replace("{time}", fmtTime(spool.cloud_binding_lost_since, this._hass)) : ""],
       [t.x_profile, spool.filament_id],
       [t.x_type, type],
       [t.x_note, spool.note],
@@ -1224,6 +1242,11 @@ class BambuFilamentsCard extends HTMLElement {
         meta.push(pill(label(s.create_type)));
       }
     }
+    // A slot assignment the cloud dropped but the integration kept is
+    // flagged up front for the same reason as the type pill.
+    if (c.show_location && (combined ? s._spools || [] : [s]).some((sp) => sp.in_printer && sp.cloud_binding_lost)) {
+      meta.push(`<span class="pill lost">${esc(t.loc_lost)}</span>`);
+    }
     if (c.show_code && s.bambu_color_code) meta.push(esc(s.bambu_color_code));
     if (c.show_code && s.color) meta.push(esc(normHex(s.color).slice(0, 7)));
     if (c.show_location) {
@@ -1295,6 +1318,7 @@ class BambuFilamentsCard extends HTMLElement {
       .pill { display:inline-block; background:var(--secondary-background-color);
               border:1px solid var(--divider-color); border-radius:9px;
               padding:0 7px; line-height:1.5; font-size:0.95em; }
+      .pill.lost { color:var(--warning-color, #f39c12); border-color:var(--warning-color, #f39c12); }
       .barbg { height:5px; border-radius:3px; background:var(--secondary-background-color);
                margin-top:4px; overflow:hidden; }
       .compact .barbg { margin-top:2px; height:4px; }

@@ -23,7 +23,7 @@ Unofficial, reverse-engineered cloud API — not affiliated with Bambu Lab, may 
 - **One device per spool** with remaining % and grams, official color name, mount location and a delete button; aggregate sensors for spool count and total remaining.
 - **Dashboard card** in the look of Studio's Filament Manager: grouping, sorting, ×n stacks for identical spools, filters, RFID/manual badges, add and edit dialogs — third-party brands and multi-spool stock included.
 - **Actions** to create, update, delete and refresh spools; catalog lookup.
-- **AMS bridge** (optional, needs ha-bambulab): auto-register loaded spools, sync AMS remaining weights, book runouts.
+- **AMS bridge** (optional, needs ha-bambulab): auto-register loaded spools, sync AMS remaining weights, book runouts, keep slot assignments the cloud loses.
 - **Stock tracking**: pre-register sealed spools, auto-remove the manual entry when the real spool hits the AMS, deduct print usage from third-party spools.
 - Email-code and 2FA login, re-auth, diagnostics, English and German.
 
@@ -35,9 +35,11 @@ Unofficial, reverse-engineered cloud API — not affiliated with Bambu Lab, may 
 
 **Book third-party usage.** Nobody deducts consumption for non-RFID spools — not Studio, not the app, not the cloud. Enabled, every finished print job is booked once against the manual spool the library shows in that slot, using the per-slot grams the cloud records (multi-color prints included, wherever the print was started). Jobs are remembered so nothing is booked twice; RFID spools are untouched.
 
+**Keep slot assignments the cloud loses.** Bambu's cloud sometimes clears the slot assignment of a spool without RFID although it is still in the AMS — for example after an AMS backup switch. The library alone cannot tell this from a deliberate unassign, but the AMS can: as long as the slot reports the same filament profile, material and color and was not emptied in between, the integration keeps the last assignment. Location, card and usage booking keep working, and the card flags the spool as *lost in cloud* until you assign it again in the app. Taking the spool out, a different profile or color, or another spool assigned to that slot releases it. Nothing is written to the cloud. Spools without RFID that run out mid-print are booked as empty, too.
+
 **No duplicate stock.** Register sealed spools in one step (count field in the card, `count` in `create_spool`). When the real spool is first loaded, Bambu creates a new RFID entry and your manual one would stay behind — the integration removes exactly one matching full manual spool automatically.
 
-All of it is off by default and toggled on the **Features** step after login or later via *Configure*. The AMS features are greyed out until the [Bambu Lab printer integration](https://github.com/greghesp/ha-bambulab) is installed; usage booking and stock dedup work from the cloud alone.
+All of it except keeping lost slot assignments is off by default and toggled on the **Features** step after login or later via *Configure*. The AMS features are greyed out until the [Bambu Lab printer integration](https://github.com/greghesp/ha-bambulab) is installed; usage booking and stock dedup work from the cloud alone.
 
 ## Installation (HACS)
 
@@ -69,7 +71,7 @@ All of it is off by default and toggled on the **Features** step after login or 
 
 ## Options
 
-Shown on the **Features** step during setup and behind *Configure*: polling interval (default 15 min; AMS and print changes trigger extra refreshes), one device per spool, auto-remove manual duplicates, auto-register AMS spools, sync remaining weight from the AMS, mark as empty on runout (plus an optional percent rule), deduct print usage, color name language (auto/German/English).
+Shown on the **Features** step during setup and behind *Configure*: polling interval (default 15 min; AMS and print changes trigger extra refreshes), one device per spool, auto-remove manual duplicates, auto-register AMS spools, sync remaining weight from the AMS, mark as empty on runout (plus an optional percent rule), keep slot assignments the cloud loses (on by default), deduct print usage, color name language (auto/German/English).
 
 ## Actions
 

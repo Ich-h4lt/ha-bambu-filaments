@@ -47,6 +47,7 @@ from .const import (
     DEFAULT_DEDUCT_USAGE,
     DEFAULT_EMPTY_ON_RUNOUT,
     DEFAULT_EMPTY_PCT,
+    DEFAULT_KEEP_LOST_BINDING,
     DEFAULT_SYNC_REMAINING,
     DEFAULT_SCAN_INTERVAL_MIN,
     DEFAULT_SPOOL_ENTITIES,
@@ -60,6 +61,8 @@ from .const import (
     OPT_EMPTY_ON_RUNOUT_UNAVAILABLE,
     OPT_EMPTY_PCT,
     OPT_EMPTY_PCT_UNAVAILABLE,
+    OPT_KEEP_LOST_BINDING,
+    OPT_KEEP_LOST_BINDING_UNAVAILABLE,
     OPT_SYNC_REMAINING,
     OPT_SYNC_REMAINING_UNAVAILABLE,
     OPT_SCAN_INTERVAL,
@@ -245,12 +248,14 @@ _UNAVAILABLE_KEYS = (
     OPT_SYNC_REMAINING_UNAVAILABLE,
     OPT_EMPTY_ON_RUNOUT_UNAVAILABLE,
     OPT_EMPTY_PCT_UNAVAILABLE,
+    OPT_KEEP_LOST_BINDING_UNAVAILABLE,
 )
 _AMS_OPTION_DEFAULTS = (
     (OPT_AUTO_REGISTER, DEFAULT_AUTO_REGISTER),
     (OPT_SYNC_REMAINING, DEFAULT_SYNC_REMAINING),
     (OPT_EMPTY_ON_RUNOUT, DEFAULT_EMPTY_ON_RUNOUT),
     (OPT_EMPTY_PCT, DEFAULT_EMPTY_PCT),
+    (OPT_KEEP_LOST_BINDING, DEFAULT_KEEP_LOST_BINDING),
 )
 
 
@@ -270,12 +275,14 @@ def build_options_schema(options: Mapping[str, Any], has_bambulab: bool) -> vol.
     remaining_value = options.get(OPT_SYNC_REMAINING, DEFAULT_SYNC_REMAINING)
     runout_value = options.get(OPT_EMPTY_ON_RUNOUT, DEFAULT_EMPTY_ON_RUNOUT)
     pct_value = options.get(OPT_EMPTY_PCT, DEFAULT_EMPTY_PCT)
+    keep_value = options.get(OPT_KEEP_LOST_BINDING, DEFAULT_KEEP_LOST_BINDING)
     if has_bambulab:
         ams_fields = {
             vol.Required(OPT_AUTO_REGISTER, default=register_value): bool,
             vol.Required(OPT_SYNC_REMAINING, default=remaining_value): bool,
             vol.Required(OPT_EMPTY_ON_RUNOUT, default=runout_value): bool,
             vol.Required(OPT_EMPTY_PCT, default=pct_value): pct_selector(False),
+            vol.Required(OPT_KEEP_LOST_BINDING, default=keep_value): bool,
         }
     else:
         # Greyed-out fields + hint (with link) while the printer integration
@@ -286,6 +293,7 @@ def build_options_schema(options: Mapping[str, Any], has_bambulab: bool) -> vol.
             vol.Optional(OPT_SYNC_REMAINING_UNAVAILABLE, default=remaining_value): ro,
             vol.Optional(OPT_EMPTY_ON_RUNOUT_UNAVAILABLE, default=runout_value): ro,
             vol.Optional(OPT_EMPTY_PCT_UNAVAILABLE, default=pct_value): pct_selector(True),
+            vol.Optional(OPT_KEEP_LOST_BINDING_UNAVAILABLE, default=keep_value): ro,
         }
     schema = vol.Schema(
         {

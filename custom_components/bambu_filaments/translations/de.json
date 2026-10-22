@@ -41,7 +41,9 @@
           "empty_on_removal_pct_unavailable": "Zusätzlich als leer buchen, wenn beim Entnehmen höchstens so viel übrig ist (%, 0 = aus) (nicht verfügbar)",
           "deduct_print_usage": "Druckverbrauch von manuell angelegten Spulen abziehen",
           "empty_on_runout": "Spule als leer buchen, wenn sie entnommen wird, während ein Druck von ihr gedruckt hat",
-          "empty_on_runout_unavailable": "Spule als leer buchen, wenn sie entnommen wird, während ein Druck von ihr gedruckt hat (nicht verfügbar)"
+          "empty_on_runout_unavailable": "Spule als leer buchen, wenn sie entnommen wird, während ein Druck von ihr gedruckt hat (nicht verfügbar)",
+          "keep_lost_slot_binding": "Schacht-Zuordnung manueller Spulen halten, wenn die Cloud sie verliert",
+          "keep_lost_slot_binding_unavailable": "Schacht-Zuordnung manueller Spulen halten, wenn die Cloud sie verliert (nicht verfügbar)"
         },
         "data_description": {
           "auto_dedup_manual": "Registriert das AMS eine neue Original-Spule, wird eine passende volle, manuell angelegte Spule aus der Cloud-Bibliothek gelöscht - vorerfasster Bestand wird so nicht zum Duplikat.",
@@ -52,8 +54,10 @@
           "empty_on_removal_pct": "Optionale Zusatzregel: Jede aus dem AMS entnommene Spule, deren letzter Messwert höchstens bei diesem Prozentwert lag, wird unabhängig vom Drucken auf 0 g gesetzt. Auf 0 lassen, wenn nicht gewünscht.",
           "empty_on_removal_pct_unavailable": "Benötigt die Bambu-Lab-Drucker-Integration (ha-bambulab), die nicht installiert oder nicht geladen ist: {bambulab_url}",
           "deduct_print_usage": "Bambu bucht für Fremdmarken-Spulen nie Verbrauch. Mit dieser Option wird jeder nach dem Einschalten beendete Druckauftrag genau einmal von der manuellen Spule abgezogen, die laut Bibliothek in dem AMS-Slot liegt - mit den Gramm pro Slot, die die Cloud zum Auftrag speichert. RFID-Spulen werden nie angefasst, anderswo bereits gebuchte Aufträge übersprungen. Abgebrochene Drucke werden anteilig gebucht, wenn die Drucker-Integration den Fortschritt gesehen hat.",
-          "empty_on_runout": "Die sichere Leerlauf-Regel: Eine Spule, die aktiver Slot eines laufenden oder pausierten Drucks war (ein AMS-Backup-Wechsel wird mitgemerkt) und vor Druckende aus dem AMS genommen wird, wird auf 0 g gesetzt. Spulen, die nach einem fertigen Druck entnommen werden, oder mitten im Druck mit über 20 % Rest (Filamentwechsel), werden nie angefasst.",
-          "empty_on_runout_unavailable": "Benötigt die Bambu-Lab-Drucker-Integration (ha-bambulab), die nicht installiert oder nicht geladen ist: {bambulab_url}"
+          "empty_on_runout": "Die sichere Leerlauf-Regel: Eine Spule, die aktiver Slot eines laufenden oder pausierten Drucks war (ein AMS-Backup-Wechsel wird mitgemerkt) und vor Druckende aus dem AMS genommen wird, wird auf 0 g gesetzt. Spulen, die nach einem fertigen Druck entnommen werden, oder mitten im Druck mit über 20 % Rest (Filamentwechsel), werden nie angefasst. Spulen ohne RFID: Meldet der Schacht, aus dem ein laufender Druck zieht, leer, wird die dort zugeordnete manuelle Spule auf 0 g gesetzt; ein Herausnehmen bei pausiertem Druck gilt als Filamentwechsel.",
+          "empty_on_runout_unavailable": "Benötigt die Bambu-Lab-Drucker-Integration (ha-bambulab), die nicht installiert oder nicht geladen ist: {bambulab_url}",
+          "keep_lost_slot_binding": "Die Bambu-Cloud löscht manchmal die Schacht-Zuordnung von Spulen ohne RFID, obwohl die Spule noch im AMS steckt (beobachtet nach einem AMS-Backup-Wechsel). Ist das an, bleibt die letzte Zuordnung erhalten, solange der AMS-Schacht dasselbe Filamentprofil, Material und dieselbe Farbe meldet und zwischendurch nicht leer war. Ort, Karte und Verbrauchsbuchung funktionieren weiter; die Karte markiert die Spule als „in Cloud verloren“, bis du sie in Bambu Handy oder Studio neu zuordnest. Herausnehmen, ein anderes Profil bzw. eine andere Farbe oder eine andere Spule in diesem Schacht hebt sie auf. In die Cloud wird nichts geschrieben. Hinweis: Auch ein Austragen in der Bambu-App ohne Herausnehmen wird ignoriert.",
+          "keep_lost_slot_binding_unavailable": "Benötigt die Bambu-Lab-Drucker-Integration (ha-bambulab), die nicht installiert oder nicht geladen ist: {bambulab_url}"
         }
       }
     },
@@ -87,7 +91,9 @@
           "empty_on_removal_pct_unavailable": "Zusätzlich als leer buchen, wenn beim Entnehmen höchstens so viel übrig ist (%, 0 = aus) (nicht verfügbar)",
           "deduct_print_usage": "Druckverbrauch von manuell angelegten Spulen abziehen",
           "empty_on_runout": "Spule als leer buchen, wenn sie entnommen wird, während ein Druck von ihr gedruckt hat",
-          "empty_on_runout_unavailable": "Spule als leer buchen, wenn sie entnommen wird, während ein Druck von ihr gedruckt hat (nicht verfügbar)"
+          "empty_on_runout_unavailable": "Spule als leer buchen, wenn sie entnommen wird, während ein Druck von ihr gedruckt hat (nicht verfügbar)",
+          "keep_lost_slot_binding": "Schacht-Zuordnung manueller Spulen halten, wenn die Cloud sie verliert",
+          "keep_lost_slot_binding_unavailable": "Schacht-Zuordnung manueller Spulen halten, wenn die Cloud sie verliert (nicht verfügbar)"
         },
         "data_description": {
           "auto_dedup_manual": "Registriert das AMS eine neue Original-Spule, wird eine passende volle, manuell angelegte Spule aus der Cloud-Bibliothek gelöscht - vorerfasster Bestand wird so nicht zum Duplikat.",
@@ -98,8 +104,10 @@
           "empty_on_removal_pct": "Optionale Zusatzregel: Jede aus dem AMS entnommene Spule, deren letzter Messwert höchstens bei diesem Prozentwert lag, wird unabhängig vom Drucken auf 0 g gesetzt. Auf 0 lassen, wenn nicht gewünscht.",
           "empty_on_removal_pct_unavailable": "Benötigt die Bambu-Lab-Drucker-Integration (ha-bambulab), die nicht installiert oder nicht geladen ist: {bambulab_url}",
           "deduct_print_usage": "Bambu bucht für Fremdmarken-Spulen nie Verbrauch. Mit dieser Option wird jeder nach dem Einschalten beendete Druckauftrag genau einmal von der manuellen Spule abgezogen, die laut Bibliothek in dem AMS-Slot liegt - mit den Gramm pro Slot, die die Cloud zum Auftrag speichert. RFID-Spulen werden nie angefasst, anderswo bereits gebuchte Aufträge übersprungen. Abgebrochene Drucke werden anteilig gebucht, wenn die Drucker-Integration den Fortschritt gesehen hat.",
-          "empty_on_runout": "Die sichere Leerlauf-Regel: Eine Spule, die aktiver Slot eines laufenden oder pausierten Drucks war (ein AMS-Backup-Wechsel wird mitgemerkt) und vor Druckende aus dem AMS genommen wird, wird auf 0 g gesetzt. Spulen, die nach einem fertigen Druck entnommen werden, oder mitten im Druck mit über 20 % Rest (Filamentwechsel), werden nie angefasst.",
-          "empty_on_runout_unavailable": "Benötigt die Bambu-Lab-Drucker-Integration (ha-bambulab), die nicht installiert oder nicht geladen ist: {bambulab_url}"
+          "empty_on_runout": "Die sichere Leerlauf-Regel: Eine Spule, die aktiver Slot eines laufenden oder pausierten Drucks war (ein AMS-Backup-Wechsel wird mitgemerkt) und vor Druckende aus dem AMS genommen wird, wird auf 0 g gesetzt. Spulen, die nach einem fertigen Druck entnommen werden, oder mitten im Druck mit über 20 % Rest (Filamentwechsel), werden nie angefasst. Spulen ohne RFID: Meldet der Schacht, aus dem ein laufender Druck zieht, leer, wird die dort zugeordnete manuelle Spule auf 0 g gesetzt; ein Herausnehmen bei pausiertem Druck gilt als Filamentwechsel.",
+          "empty_on_runout_unavailable": "Benötigt die Bambu-Lab-Drucker-Integration (ha-bambulab), die nicht installiert oder nicht geladen ist: {bambulab_url}",
+          "keep_lost_slot_binding": "Die Bambu-Cloud löscht manchmal die Schacht-Zuordnung von Spulen ohne RFID, obwohl die Spule noch im AMS steckt (beobachtet nach einem AMS-Backup-Wechsel). Ist das an, bleibt die letzte Zuordnung erhalten, solange der AMS-Schacht dasselbe Filamentprofil, Material und dieselbe Farbe meldet und zwischendurch nicht leer war. Ort, Karte und Verbrauchsbuchung funktionieren weiter; die Karte markiert die Spule als „in Cloud verloren“, bis du sie in Bambu Handy oder Studio neu zuordnest. Herausnehmen, ein anderes Profil bzw. eine andere Farbe oder eine andere Spule in diesem Schacht hebt sie auf. In die Cloud wird nichts geschrieben. Hinweis: Auch ein Austragen in der Bambu-App ohne Herausnehmen wird ignoriert.",
+          "keep_lost_slot_binding_unavailable": "Benötigt die Bambu-Lab-Drucker-Integration (ha-bambulab), die nicht installiert oder nicht geladen ist: {bambulab_url}"
         }
       }
     }

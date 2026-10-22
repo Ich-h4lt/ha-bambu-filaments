@@ -30,6 +30,14 @@ from homeassistant.helpers import entity_registry as er
 
 from .colors import BambuColorDB, normalize_hex
 from .const import AMS_TYPE_BY_MODEL, BAMBULAB_DOMAIN
+from .slot_hold import (
+    SLOT_EMPTY,
+    SLOT_LOADED,
+    SLOT_UNAVAILABLE,
+    SLOT_UNKNOWN,
+    make_fingerprint,
+    slot_key,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -65,6 +73,13 @@ def printer_busy(hass: HomeAssistant, printer_serial: str) -> bool:
     entity_id = _entity_by_unique_id(hass, f"{printer_serial}_print_status")
     state = hass.states.get(entity_id) if entity_id else None
     return bool(state and state.state in _BUSY_STATES)
+
+
+def printer_running(hass: HomeAssistant, printer_serial: str) -> bool:
+    """Actively printing (not paused) - a slot emptied now is a runout."""
+    entity_id = _entity_by_unique_id(hass, f"{printer_serial}_print_status")
+    state = hass.states.get(entity_id) if entity_id else None
+    return bool(state and state.state == "running")
 
 
 def printer_progress(hass: HomeAssistant, printer_serial: str) -> int | None:
@@ -152,21 +167,10 @@ def scan_mounted_rfid_trays(hass: HomeAssistant) -> list[MountedTray]:
         if not filament_id:
             continue
 
-        # The AMS index (cloud amsId) comes from ha-bambulab's device name:
-        # regular units are named 1-based (AMS_1 -> 0), AMS HT keeps 128+.
-        device = dev_reg.async_get(entry.device_id) if entry.device_id else None
-        if device is None:
+        location = _tray_location(dev_reg, entry, match, attrs)
+        if location is None:
             continue
-        index_match = _AMS_DEVICE_INDEX_RE.search(device.name or "")
-        if index_match is None:
-            _LOGGER.debug("Auto-register: cannot derive AMS index for %s", entry.entity_id)
-            continue
-        n = int(index_match.group("n"))
-        ams_id = n - 1 if n < 128 else n
-        printer_name = match.group("dev")
-        printer_dev = dev_reg.async_get(device.via_device_id) if device.via_device_id else None
-        if printer_dev is not None:
-            printer_name = printer_dev.name_by_user or printer_dev.name or printer_name
+        ams_id, slot_id, printer_name, ams_model = location
         try:
             tray_weight = int(float(attrs.get("tray_weight") or 0))
         except (TypeError, ValueError):
@@ -175,10 +179,6 @@ def scan_mounted_rfid_trays(hass: HomeAssistant) -> list[MountedTray]:
             remain = int(attrs.get("remain", -1))
         except (TypeError, ValueError):
             remain = -1
-        try:
-            slot_id = str(max(0, int(attrs.get("slot") or match.group("n")) - 1))
-        except (TypeError, ValueError):
-            slot_id = str(int(match.group("n")) - 1)
         trays.append(
             MountedTray(
                 entity_id=entry.entity_id,
@@ -192,13 +192,114 @@ def scan_mounted_rfid_trays(hass: HomeAssistant) -> list[MountedTray]:
                 printer_serial=match.group("serial"),
                 printer_name=printer_name,
                 ams_serial=match.group("ams"),
-                ams_model=device.model or "",
+                ams_model=ams_model,
                 ams_id=ams_id,
                 slot_id=slot_id,
                 active=bool(attrs.get("active")),
             )
         )
     return trays
+
+
+def _tray_location(
+    dev_reg: dr.DeviceRegistry,
+    entry: er.RegistryEntry,
+    match: re.Match[str],
+    attrs: Any,
+) -> tuple[int, str, str, str] | None:
+    """(cloud amsId, 0-based slotId, printer name, AMS model) of a tray sensor."""
+    # The AMS index (cloud amsId) comes from ha-bambulab's device name:
+    # regular units are named 1-based (AMS_1 -> 0), AMS HT keeps 128+.
+    device = dev_reg.async_get(entry.device_id) if entry.device_id else None
+    if device is None:
+        return None
+    index_match = _AMS_DEVICE_INDEX_RE.search(device.name or "")
+    if index_match is None:
+        _LOGGER.debug("Cannot derive the AMS index for %s", entry.entity_id)
+        return None
+    n = int(index_match.group("n"))
+    ams_id = n - 1 if n < 128 else n
+    printer_name = match.group("dev")
+    printer_dev = dev_reg.async_get(device.via_device_id) if device.via_device_id else None
+    if printer_dev is not None:
+        printer_name = printer_dev.name_by_user or printer_dev.name or printer_name
+    try:
+        slot_id = str(max(0, int(attrs.get("slot") or match.group("n")) - 1))
+    except (TypeError, ValueError):
+        slot_id = str(int(match.group("n")) - 1)
+    return ams_id, slot_id, printer_name, device.model or ""
+
+
+@dataclass
+class SlotReading:
+    """What the AMS reports for one slot right now - any spool, RFID or not."""
+
+    entity_id: str
+    printer_serial: str
+    ams_id: int
+    slot_id: str
+    status: str
+    filament_id: str
+    material: str
+    color: str
+    active: bool
+
+    @property
+    def key(self) -> str:
+        return slot_key(self.printer_serial, self.ams_id, self.slot_id)
+
+    @property
+    def fingerprint(self) -> tuple[str, str, str]:
+        return make_fingerprint(self.filament_id, self.material, self.color)
+
+
+def slot_status(state_value: str | None, attrs: Any) -> str:
+    """Loaded / empty / unknown / unavailable from a tray sensor state."""
+    if state_value is None or state_value in ("unavailable", "unknown"):
+        return SLOT_UNAVAILABLE
+    if attrs.get("empty"):
+        return SLOT_EMPTY
+    if attrs.get("unknown"):
+        return SLOT_UNKNOWN
+    return SLOT_LOADED
+
+
+def scan_ams_slots(hass: HomeAssistant) -> dict[str, SlotReading]:
+    """Every AMS slot of every printer, keyed like the cloud position.
+
+    The key uses the printer serial from the sensor's unique_id, which is the
+    cloud `devId` (the ams/sync calls of the auto-register feature rely on
+    the same identity). External spool holders have no AMS tray sensor and
+    are not included.
+    """
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    slots: dict[str, SlotReading] = {}
+    for entry in ent_reg.entities.values():
+        if entry.platform != BAMBULAB_DOMAIN or entry.domain != "sensor" or entry.disabled:
+            continue
+        match = _AMS_TRAY_RE.match(entry.unique_id or "")
+        if match is None:
+            continue
+        state = hass.states.get(entry.entity_id)
+        attrs = state.attributes if state is not None else {}
+        location = _tray_location(dev_reg, entry, match, attrs)
+        if location is None:
+            continue
+        ams_id, slot_id, _printer_name, _model = location
+        reading = SlotReading(
+            entity_id=entry.entity_id,
+            printer_serial=match.group("serial"),
+            ams_id=ams_id,
+            slot_id=slot_id,
+            status=slot_status(state.state if state is not None else None, attrs),
+            filament_id=str(attrs.get("filament_id") or ""),
+            material=str(attrs.get("type") or ""),
+            color=str(attrs.get("color") or ""),
+            active=bool(attrs.get("active")),
+        )
+        slots[reading.key] = reading
+    return slots
 
 
 def build_ams_sync_item(

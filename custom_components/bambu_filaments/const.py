@@ -26,6 +26,8 @@ OPT_EMPTY_ON_RUNOUT_UNAVAILABLE = "empty_on_runout_unavailable"
 OPT_EMPTY_PCT = "empty_on_removal_pct"
 OPT_EMPTY_PCT_UNAVAILABLE = "empty_on_removal_pct_unavailable"
 OPT_DEDUCT_USAGE = "deduct_print_usage"
+OPT_KEEP_LOST_BINDING = "keep_lost_slot_binding"
+OPT_KEEP_LOST_BINDING_UNAVAILABLE = "keep_lost_slot_binding_unavailable"
 
 DEFAULT_SCAN_INTERVAL_MIN = 15
 DEFAULT_SPOOL_ENTITIES = True
@@ -39,6 +41,8 @@ DEFAULT_EMPTY_PCT = 0  # 0 = off (optional extra rule next to the runout rule)
 # this left was a deliberate filament change, not a runout.
 RUNOUT_MAX_REMAIN_PCT = 20
 DEFAULT_DEDUCT_USAGE = False
+# On by default: it only corrects a cloud-side loss and never writes to the cloud.
+DEFAULT_KEEP_LOST_BINDING = True
 # Studio pushes AMS weights at most every 10 min per spool while the printer is busy.
 REMAINING_PUSH_COOLDOWN_S = 600
 

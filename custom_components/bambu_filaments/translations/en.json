@@ -41,7 +41,9 @@
           "empty_on_removal_pct_unavailable": "Also mark as empty when removed with at most this much left (%, 0 = off) (unavailable)",
           "deduct_print_usage": "Deduct print usage from manually created spools",
           "empty_on_runout": "Mark a spool as empty when it is removed while a print was drawing from it",
-          "empty_on_runout_unavailable": "Mark a spool as empty when it is removed while a print was drawing from it (unavailable)"
+          "empty_on_runout_unavailable": "Mark a spool as empty when it is removed while a print was drawing from it (unavailable)",
+          "keep_lost_slot_binding": "Keep a manual spool's slot assignment when the cloud drops it",
+          "keep_lost_slot_binding_unavailable": "Keep a manual spool's slot assignment when the cloud drops it (unavailable)"
         },
         "data_description": {
           "auto_dedup_manual": "When the AMS registers a new official spool, one matching full, manually created spool is deleted from the cloud library - pre-entered stock no longer turns into duplicates.",
@@ -52,8 +54,10 @@
           "empty_on_removal_pct": "Optional extra rule: any spool taken out of the AMS whose last reading was at or below this percentage is set to 0 g, regardless of printing. Leave at 0 unless you want that.",
           "empty_on_removal_pct_unavailable": "Requires the Bambu Lab printer integration (ha-bambulab), which is not installed or not loaded: {bambulab_url}",
           "deduct_print_usage": "Bambu never books consumption for third-party spools. With this on, every print job finished after enabling is booked once against the manual spool the library shows in that AMS slot, using the per-slot grams the cloud records for the job. RFID spools are never touched; jobs already booked elsewhere are skipped. Cancelled jobs are booked proportionally when the printer integration saw the progress.",
-          "empty_on_runout": "The safe runout rule: a spool that was the active tray of a running or paused print (an AMS backup switch is remembered too) and is then taken out of the AMS before that print ends is set to 0 g. Spools removed after a finished print, or mid-print with more than 20 % left (filament change), are never touched.",
-          "empty_on_runout_unavailable": "Requires the Bambu Lab printer integration (ha-bambulab), which is not installed or not loaded: {bambulab_url}"
+          "empty_on_runout": "The safe runout rule: a spool that was the active tray of a running or paused print (an AMS backup switch is remembered too) and is then taken out of the AMS before that print ends is set to 0 g. Spools removed after a finished print, or mid-print with more than 20 % left (filament change), are never touched. Spools without RFID: when the slot a running print draws from reports empty, the manual spool assigned to it is set to 0 g; a removal while the print is paused counts as a filament change.",
+          "empty_on_runout_unavailable": "Requires the Bambu Lab printer integration (ha-bambulab), which is not installed or not loaded: {bambulab_url}",
+          "keep_lost_slot_binding": "Bambu's cloud sometimes clears the slot assignment of spools without RFID although the spool is still in the AMS (seen after an AMS backup switch). With this on, the last assignment is kept as long as the AMS slot reports the same filament profile, material and color and was not emptied in between. Location, card and usage booking keep working; the card flags the spool as 'lost in cloud' until you assign it again in Bambu Handy or Studio. Removing the spool, a different profile/color or another spool assigned to that slot releases it. Nothing is written to the cloud. Note: unassigning in the Bambu app without removing the spool is ignored as well.",
+          "keep_lost_slot_binding_unavailable": "Requires the Bambu Lab printer integration (ha-bambulab), which is not installed or not loaded: {bambulab_url}"
         }
       }
     },
@@ -87,7 +91,9 @@
           "empty_on_removal_pct_unavailable": "Also mark as empty when removed with at most this much left (%, 0 = off) (unavailable)",
           "deduct_print_usage": "Deduct print usage from manually created spools",
           "empty_on_runout": "Mark a spool as empty when it is removed while a print was drawing from it",
-          "empty_on_runout_unavailable": "Mark a spool as empty when it is removed while a print was drawing from it (unavailable)"
+          "empty_on_runout_unavailable": "Mark a spool as empty when it is removed while a print was drawing from it (unavailable)",
+          "keep_lost_slot_binding": "Keep a manual spool's slot assignment when the cloud drops it",
+          "keep_lost_slot_binding_unavailable": "Keep a manual spool's slot assignment when the cloud drops it (unavailable)"
         },
         "data_description": {
           "auto_dedup_manual": "When the AMS registers a new official spool, one matching full, manually created spool is deleted from the cloud library - pre-entered stock no longer turns into duplicates.",
@@ -98,8 +104,10 @@
           "empty_on_removal_pct": "Optional extra rule: any spool taken out of the AMS whose last reading was at or below this percentage is set to 0 g, regardless of printing. Leave at 0 unless you want that.",
           "empty_on_removal_pct_unavailable": "Requires the Bambu Lab printer integration (ha-bambulab), which is not installed or not loaded: {bambulab_url}",
           "deduct_print_usage": "Bambu never books consumption for third-party spools. With this on, every print job finished after enabling is booked once against the manual spool the library shows in that AMS slot, using the per-slot grams the cloud records for the job. RFID spools are never touched; jobs already booked elsewhere are skipped. Cancelled jobs are booked proportionally when the printer integration saw the progress.",
-          "empty_on_runout": "The safe runout rule: a spool that was the active tray of a running or paused print (an AMS backup switch is remembered too) and is then taken out of the AMS before that print ends is set to 0 g. Spools removed after a finished print, or mid-print with more than 20 % left (filament change), are never touched.",
-          "empty_on_runout_unavailable": "Requires the Bambu Lab printer integration (ha-bambulab), which is not installed or not loaded: {bambulab_url}"
+          "empty_on_runout": "The safe runout rule: a spool that was the active tray of a running or paused print (an AMS backup switch is remembered too) and is then taken out of the AMS before that print ends is set to 0 g. Spools removed after a finished print, or mid-print with more than 20 % left (filament change), are never touched. Spools without RFID: when the slot a running print draws from reports empty, the manual spool assigned to it is set to 0 g; a removal while the print is paused counts as a filament change.",
+          "empty_on_runout_unavailable": "Requires the Bambu Lab printer integration (ha-bambulab), which is not installed or not loaded: {bambulab_url}",
+          "keep_lost_slot_binding": "Bambu's cloud sometimes clears the slot assignment of spools without RFID although the spool is still in the AMS (seen after an AMS backup switch). With this on, the last assignment is kept as long as the AMS slot reports the same filament profile, material and color and was not emptied in between. Location, card and usage booking keep working; the card flags the spool as 'lost in cloud' until you assign it again in Bambu Handy or Studio. Removing the spool, a different profile/color or another spool assigned to that slot releases it. Nothing is written to the cloud. Note: unassigning in the Bambu app without removing the spool is ignored as well.",
+          "keep_lost_slot_binding_unavailable": "Requires the Bambu Lab printer integration (ha-bambulab), which is not installed or not loaded: {bambulab_url}"
         }
       }
     }
